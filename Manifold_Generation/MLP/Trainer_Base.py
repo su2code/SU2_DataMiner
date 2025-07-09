@@ -19,7 +19,7 @@
 # Description:                                                                                |
 #   Base class for the various MLP trainer types and MLP evaluator class.                     |
 #                                                                                             |
-# Version: 2.0.0                                                                              |
+# Version: 2.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 

@@ -19,7 +19,7 @@
 # Description:                                                                                |
 #  Default settings/names/properties for the various steps within the DataMiner workflow.     |                                                                          
 #                                                                                             |  
-# Version: 2.0.0                                                                              |
+# Version: 2.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
@@ -107,7 +107,21 @@ FGMSymbols:dict = {FGMVars.ProgressVariable.name : r"Progress variable $(\mathca
                    FGMVars.Beta_Enth_Thermal.name : r"Cp pref. diffusion scalar $\left(\beta_{h,1}\right)[J \mathrm{kg}^{-1} K^{-1}]$",\
                    FGMVars.Beta_Enth.name : r"Specific enthalpy pref. diffusion scalar $\left(\beta_{h,2}\right)[J \mathrm{kg}^{-1}]$",\
                    FGMVars.Beta_MixFrac.name : r"Mixture fraction pref. diffusion scalar $\left(\beta_Z\right)[-]$"}
-
+FGMPlotSymbols:dict = {FGMVars.ProgressVariable.name : r"$\mathcal{c}$",\
+                       FGMVars.EnthalpyTot.name : r"$h$",\
+                       FGMVars.MixtureFraction.name : r"$Z$",\
+                       FGMVars.Temperature.name : r"$T$",\
+                       FGMVars.MolarWeightMix.name : r"$W_M$",\
+                       FGMVars.Cp.name : r"$c_p$",\
+                       FGMVars.Conductivity.name : r"$k$",\
+                       FGMVars.ViscosityDyn.name : r"$\mu$",\
+                       FGMVars.Heat_Release.name : r"$\dot{Q}$",\
+                       FGMVars.DiffusionCoefficient.name : r"$D$",\
+                       FGMVars.ProdRateTot_PV.name : r"$\rho\dot{\omega}_\mathcal{c}$",\
+                       FGMVars.Beta_ProgVar.name : r"$\beta_\mathcal{c}$",\
+                       FGMVars.Beta_Enth.name : r"$\beta_{h,2}$",\
+                       FGMVars.Beta_Enth_Thermal.name : r"$\beta_{h,1}$",\
+                       FGMVars.Beta_MixFrac.name : r"$\beta_Z$"}
 class DefaultSettings_NICFD(DefaultProperties):
     T_min:float = 300
     T_max:float = 600

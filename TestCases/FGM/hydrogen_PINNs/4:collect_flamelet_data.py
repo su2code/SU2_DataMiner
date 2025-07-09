@@ -20,7 +20,7 @@
 # Description:                                                                                |
 #  Concatenate flamelet data and group outputs for training physics-informed neural networks. |
 #                                                                                             |  
-# Version: 2.0.0                                                                              |
+# Version: 2.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 

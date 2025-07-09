@@ -25,7 +25,7 @@
 #  , and z_i and z_c are the mixture fraction coefficients and constant respectively.         |
 #  This regression test compares the mixture fraction according to Cantera and to FlameletAI  |
 #                                                                                             |  
-# Version: 2.0.0                                                                              |
+# Version: 2.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 

@@ -21,7 +21,7 @@
 #  homogeneous distribution of flamelet data along the progress variable, enthalpy, and       |
 #  mixture fraction direction.                                                                |
 #                                                                                             |
-# Version: 2.0.0                                                                              |
+# Version: 2.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
@@ -37,7 +37,7 @@ prop_cycle = plt.rcParams["axes.prop_cycle"]
 colors = prop_cycle.by_key()['color']
 
 from Common.DataDrivenConfig import Config_FGM
-from Common.Properties import DefaultSettings_FGM, FGMVars
+from Common.Properties import DefaultSettings_FGM, FGMVars, FGMPlotSymbols
 
 class FlameletConcatenator:
     """Read, regularize, and concatenate flamelet data for MLP training or LUT generation.
@@ -1124,31 +1124,41 @@ class GroupOutputs:
             combination_index = self.__best_group
         if combination_index >= len(self.__most_interesting_groups):
             raise Exception("Index exceeds number of best combinations")
+
+        N=len(self.__most_interesting_groups[combination_index])
+        plt.rcParams["axes.prop_cycle"] = plt.cycler("color", plt.cm.cubehelix(np.linspace(0,1,N+1)))
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
         fig = plt.figure(figsize=[10,10])
         ax = plt.axes()
-        ax.matshow(np.abs(self.__correlation_matrix))
+        ax.matshow(np.abs(self.__correlation_matrix), cmap="gray")
         for i in range(len(self.__free_variables)):
             for j in range(len(self.__free_variables)):
                 ax.text(i, j, "%.2f" % (np.abs(self.__correlation_matrix[i,j])),\
                         fontsize=12,\
                         horizontalalignment='center',\
-                        verticalalignment='center')
+                        verticalalignment='center',\
+                        color ='k' if np.abs(self.__correlation_matrix[i,j])>0.5 else 'white')
 
         for iGroup, g in enumerate(self.__most_interesting_groups[combination_index]):
             color = colors[iGroup]
             for iVar, v in enumerate(g):
                 if iVar == 0:
-                    ax.plot(self.__free_variables.index(v), self.__free_variables.index(v), 'o',markerfacecolor='none',color=color,markersize=24, markeredgewidth=3,label="Group "+str(iGroup+1))
+                    ax.plot(self.__free_variables.index(v), self.__free_variables.index(v), 's',markerfacecolor='none',color=color,markersize=36, markeredgewidth=5,label="Group "+str(iGroup+1))
+                
                 else:
-                    ax.plot(self.__free_variables.index(v), self.__free_variables.index(g[0]), 'o',markerfacecolor='none',color=color,markersize=24, markeredgewidth=3)
-        
+                    ax.plot(self.__free_variables.index(v), self.__free_variables.index(g[0]), 's',markerfacecolor='none',color=color,markersize=36, markeredgewidth=5)
+                ax.text(self.__free_variables.index(v), len(self.__correlation_matrix), "%i" % (iGroup+1),fontsize=20,\
+                        horizontalalignment='center',\
+                        verticalalignment='center')
+        ax.text(-0.5, len(self.__correlation_matrix), r"$J_\mathrm{group}$", fontsize=20,horizontalalignment='right',verticalalignment='center')
         ax.set_xticks(range(len(self.__free_variables)))
         ax.set_yticks(range(len(self.__free_variables)))
-        ax.set_xticklabels(self.__free_variables)
-        ax.set_yticklabels(self.__free_variables)
+        
+        
+        ax.set_xticklabels([FGMPlotSymbols[q] for q in self.__free_variables])
+        ax.set_yticklabels([FGMPlotSymbols[q] for q in self.__free_variables])
         ax.tick_params(axis='x',labelrotation=90)
         ax.tick_params(which='both',labelsize=18)
-        ax.legend(fontsize=20, bbox_to_anchor=(1.0, 0.5))
         fig.savefig(self.__Config.GetOutputDir()+"/Group_correlation_matrix.pdf",format='pdf',bbox_inches='tight')
         plt.tight_layout()
         plt.show()
