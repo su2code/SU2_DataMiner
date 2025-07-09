@@ -272,7 +272,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
         """
 
         # Enthalpy projection: dbeta_pv / dh = 0
-        cv_PI = self._X_train_norm 
+        cv_PI = self._X_boundary_norm
         projection_array_h = np.zeros(np.shape(cv_PI))
         projection_array_h[:, self._controlling_vars.index(FGMVars.EnthalpyTot.name)] = 1.0
         target_grad_h = np.zeros(len(cv_PI))
@@ -341,7 +341,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
             if ("N2") in pv_species:
                 alpha_N2 = 0.0
 
-            cv_PI = self._X_train_norm 
+            cv_PI = self._X_boundary_norm 
             target_grad_YH = np.ones(len(cv_PI))
             projection_array_YH = np.zeros(np.shape(cv_PI))
             projection_array_YH[:, self._controlling_vars.index(FGMVars.Y_H.name)] = 1.0
@@ -363,7 +363,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
         """
 
         # Enthalpy projection: dbeta_z / dh = 0
-        cv_PI = self._X_train_norm
+        cv_PI = self._X_boundary_norm
         projection_array_h = np.zeros(np.shape(cv_PI))
         projection_array_h[:,self._controlling_vars.index(FGMVars.EnthalpyTot.name)] = 1.0
         target_grad_h = np.zeros(len(cv_PI))
@@ -421,7 +421,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
             z_H = z_i[self.__Config.gas.species_index("H")]
             z_Ns = self.__Config.GetMixtureFractionCoeff_Carrier()
             Le_H = self.__Config.GetConstSpecieLewisNumbers()[self.__Config.gas.species_index("H")]
-            cv_H = self._X_train_norm
+            cv_H = self._X_boundary_norm
             target_grad_YH = np.ones(len(cv_H))
             projection_array_YH = np.zeros(np.shape(cv_H))
             projection_array_YH[:, self._controlling_vars.index(FGMVars.Y_H.name)] = 1.0
@@ -681,7 +681,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
         if self.__include_Hradical:
             # Y_H projection: dbeta_h2 / dY_H = (h_H - h_N2)/Le_H
 
-            cv_PI = self._X_train_norm
+            cv_PI = self._X_boundary_norm
             projection_array_train_YH = np.zeros(np.shape(cv_PI))
             projection_array_train_YH[:, self._controlling_vars.index(FGMVars.Y_H.name)] = 1.0
             target_grad_YH = np.ones(len(cv_PI))
@@ -699,6 +699,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
                 val_Z = x[self._controlling_vars.index(FGMVars.MixtureFraction.name)]
                 self.__Config.gas.set_mixture_fraction(val_Z, self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
                 val_pv_unb = self.__Config.ComputeProgressVariable(variables=None, flamelet_data=None, Y_flamelet=self.__Config.gas.Y[:,np.newaxis])[0]
+                self.__Config.gas.TP=self.__Config.GetUnbTempBounds()[-1],DefaultProperties.pressure
                 if val_pv > val_pv_unb+1e-3:
                     if val_Z > val_Z_stoch:
                         self.__Config.gas.equilibrate("HP")
@@ -1037,7 +1038,8 @@ class TrainMLP_FGM(TrainMLP):
                                   FGMVars.Beta_MixFrac.name,\
                                   FGMVars.Beta_Enth.name,\
                                   FGMVars.MolarWeightMix.name]
-
+    __PINN_variables_Hradical:list[str] = [FGMVars.Cp.name,\
+                                           FGMVars.Beta_Enth_Thermal.name]
     def __init__(self, Config:Config_FGM, group_idx:int=0):
         """Define TrainMLP instance and prepare MLP trainer with
         default settings.
@@ -1051,6 +1053,8 @@ class TrainMLP_FGM(TrainMLP):
 
         self.__Config = Config 
         self.__output_group=group_idx
+        if (FGMVars.Y_H.name in self.__Config.GetControllingVariables()):
+            self.__PINN_variables += self.__PINN_variables_Hradical
         self.CheckPINNVars()
         TrainMLP.__init__(self, Config_in=Config)
         self.SetOutputGroup(group_idx)
