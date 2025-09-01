@@ -444,7 +444,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
 
         # Enthalpy projection: dWM / dh = 0
 
-        cv_PI = self._X_train_norm
+        cv_PI = self._X_boundary_norm
         projection_array_h = np.zeros(np.shape(cv_PI))
         projection_array_h[:,self._controlling_vars.index(FGMVars.EnthalpyTot.name)] = 1.0
         target_grad_array = np.zeros(len(cv_PI))
@@ -578,7 +578,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
             val_h = x[self._controlling_vars.index(FGMVars.EnthalpyTot.name)]
             val_Z = x[self._controlling_vars.index(FGMVars.MixtureFraction.name)]
             
-            self.__Config.gas.set_mixture_fraction(val_Z, self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
+            self.__Config.gas.set_mixture_fraction(max(0,min(val_Z,1.0)), self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
             self.__Config.gas.TP = self.__Config.GetUnbTempBounds()[1], ct.one_atm
             val_pv_unb = self.__Config.ComputeProgressVariable(variables=None, flamelet_data=None, Y_flamelet=self.__Config.gas.Y[:,np.newaxis])[0]
             if val_pv > val_pv_unb+1e-3:
@@ -629,15 +629,16 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
             val_pv = x[self._controlling_vars.index(FGMVars.ProgressVariable.name)]
             val_h = x[self._controlling_vars.index(FGMVars.EnthalpyTot.name)]
             val_Z = x[self._controlling_vars.index(FGMVars.MixtureFraction.name)]
-            self.__Config.gas.set_mixture_fraction(val_Z, self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
+            self.__Config.gas.set_mixture_fraction(min(val_Z,1.0), self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
             val_pv_unb = self.__Config.ComputeProgressVariable(variables=None, flamelet_data=None, Y_flamelet=self.__Config.gas.Y[:,np.newaxis])[0]
+            self.__Config.gas.TP = self.__Config.GetUnbTempBounds()[1], ct.one_atm
             if val_pv > val_pv_unb+1e-3:
                 if val_Z > val_Z_stoch:
                     self.__Config.gas.equilibrate("HP")
                 else:
                     self.__Config.gas.equilibrate("TP")
             self.__Config.gas.HP = val_h, 101325
-            cp_i = self.__Config.gas.partial_cp/self.__Config.gas.molecular_weights
+            cp_i = self.__Config.gas.partial_molar_cp/self.__Config.gas.molecular_weights
             cp_H = cp_i[self.__Config.gas.species_index("H")]
             cp_carrier = cp_i[self.__Config.gas.species_index("N2")]
             target_grad_YH[i_b] = ((cp_H - cp_carrier) / Le_H) * (Y_H_scale) / Beta_h1_scale
@@ -697,7 +698,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
                 val_pv = x[self._controlling_vars.index(FGMVars.ProgressVariable.name)]
                 val_h = x[self._controlling_vars.index(FGMVars.EnthalpyTot.name)]
                 val_Z = x[self._controlling_vars.index(FGMVars.MixtureFraction.name)]
-                self.__Config.gas.set_mixture_fraction(val_Z, self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
+                self.__Config.gas.set_mixture_fraction(min(val_Z,1.0), self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
                 val_pv_unb = self.__Config.ComputeProgressVariable(variables=None, flamelet_data=None, Y_flamelet=self.__Config.gas.Y[:,np.newaxis])[0]
                 self.__Config.gas.TP=self.__Config.GetUnbTempBounds()[-1],DefaultProperties.pressure
                 if val_pv > val_pv_unb+1e-3:
