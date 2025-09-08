@@ -532,7 +532,7 @@ class Train_FGM_PINN(PhysicsInformedTrainer):
                 val_h = x[self._controlling_vars.index(FGMVars.EnthalpyTot.name)]
                 val_Z = x[self._controlling_vars.index(FGMVars.MixtureFraction.name)]
                 
-                self.__Config.gas.set_mixture_fraction(val_Z, self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
+                self.__Config.gas.set_mixture_fraction(max(0.0, min(val_Z,1.0)), self.__Config.GetFuelString(), self.__Config.GetOxidizerString())
                 self.__Config.gas.TP = self.__Config.GetUnbTempBounds()[1], ct.one_atm
                 val_pv_unb = self.__Config.ComputeProgressVariable(variables=None, flamelet_data=None, Y_flamelet=self.__Config.gas.Y[:,np.newaxis])[0]
                 if val_pv > val_pv_unb+1e-3:
