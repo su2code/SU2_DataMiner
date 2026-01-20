@@ -339,7 +339,7 @@ class DataGenerator_CoolProp(DataGenerator_Base):
                         T = self.fluid.T()
                         self.fluid.update(CP.PT_INPUTS, p, T)
                     # Check if fluid phase is not vapor or liquid
-                    self.__StateVars_fluid[i,j,:], self.__success_locations[i,j] = self.__GetStateVector()
+                    self.__StateVars_fluid[i,j,:], self.__success_locations[i,j] = self.GetStateVector()
                 except:
                     self.__success_locations[i,j] = False 
                     self.__StateVars_fluid[i, j, :] = None
@@ -390,7 +390,7 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         
         return 
     
-    def __GetStateVector(self):
+    def GetStateVector(self):
         state_vector_vals = np.ones(EntropicVars.N_STATE_VARS.value)
         correct_phase = True 
         if self.fluid.phase() in self.__accepted_phases:
@@ -421,6 +421,10 @@ class DataGenerator_CoolProp(DataGenerator_Base):
             correct_phase = False
             state_vector_vals[:] = None 
         return state_vector_vals, correct_phase
+    
+    def UpdateFluid(self, val_rho, val_e):
+        self.fluid.update(CP.DmassUmass_INPUTS, val_rho, val_e)
+        return 
     
     def VisualizeFluidData(self):
         """Visualize computed fluid data.
