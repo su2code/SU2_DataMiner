@@ -123,9 +123,9 @@ class SU2TableGenerator_NICFD:
         fluid_data_file = self._Config.GetOutputDir() + "/" + self._Config.GetConcatenationFileHeader() + "_full.csv"
         with open(fluid_data_file, 'r') as fid:
             vars = fid.readline().strip().split(',')
-        self.table_vars = vars.copy()
         D = np.loadtxt(fluid_data_file,delimiter=',',skiprows=1)
         entropic_vars = [a.name for a in EntropicVars][:-1]
+        self.table_vars = entropic_vars.copy()
         fluid_data_out = np.zeros([len(D), EntropicVars.N_STATE_VARS.value])
         for ivar, x in enumerate(vars):
             fluid_data_out[:, entropic_vars.index(x)] = D[:, ivar]
@@ -338,7 +338,7 @@ class SU2TableGenerator_NICFD:
         fid = open(file_out, "w+")
         fid.write("Dragon library\n\n")
         fid.write("<Header>\n\n")
-        fid.write("[Version]\n1.1.0\n\n")
+        fid.write("[Version]\n1.0.1\n\n")
 
         fid.write("[Number of points]\n")
         fid.write("%i\n" % np.shape(self._table_nodes)[0])
