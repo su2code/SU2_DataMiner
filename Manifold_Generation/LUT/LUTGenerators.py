@@ -83,6 +83,42 @@ class SU2TableGenerator_NICFD:
         
         return 
     
+    def SetCellSize_Coarse(self, cell_size_coarse:float=1e-2):
+        """Specify the coarse level cell size of the table
+
+        :param cell_size_coarse: coarse cell size, defaults to 1e-2
+        :type cell_size_coarse: float, optional
+        :raises Exception: if specified cell size is negative or zero
+        """
+        if cell_size_coarse <= 0:
+            raise Exception("Cell size value should be positive")
+        self._base_cell_size = cell_size_coarse 
+        return 
+    
+    def SetCellSize_Refined(self, cell_size_ref:float=5e-3):
+        """Specify the refined level cell size of the table
+
+        :param cell_size_ref: refined cell size, defaults to 1e-2
+        :type cell_size_ref: float, optional
+        :raises Exception: if specified cell size is negative or zero
+        """
+        if cell_size_ref <= 0:
+            raise Exception("Cell size value should be positive")
+        self._refined_cell_size = cell_size_ref 
+        return 
+    
+    def SetRefinement_Radius(self, refinement_radius:float=1e-2):
+        """Specify the radius around each refinement point within which the refined cell size is applied
+
+        :param refinement_radius: refinement radius, defaults to 1e-2
+        :type refinement_radius: float, optional
+        :raises Exception: if specified value is negative or zero
+        """
+        if refinement_radius <= 0:
+            raise Exception("Refinement radius should be positive")
+        self._refinement_radius = refinement_radius
+        return 
+    
     def __LoadFluidData(self):
         fluid_data_file = self._Config.GetOutputDir() + "/" + self._Config.GetConcatenationFileHeader() + "_full.csv"
         with open(fluid_data_file, 'r') as fid:
