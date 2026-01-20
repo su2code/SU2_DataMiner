@@ -80,7 +80,7 @@ class SU2TableGenerator_NICFD:
         """
         self._Config = Config 
         self._DataGenerator = DataGenerator_CoolProp(self._Config)
-        
+        self.__LoadFluidData()
         return 
     
     def SetCellSize_Coarse(self, cell_size_coarse:float=1e-2):
@@ -138,7 +138,7 @@ class SU2TableGenerator_NICFD:
     def __Compute2DMesh(self, points:np.ndarray[float], ref_pts:np.ndarray[float]=[],show:bool=False):
         
         # Create concave hull of normalized table coordinates.
-        XY_hull = concave_hull(points, length_threshold=1e-1)
+        XY_hull = concave_hull(np.unique(points,axis=0), length_threshold=1e-1)
         
         # Filter concave hull to remove nodes that are too close together.
         hull_pts = []
@@ -219,11 +219,14 @@ class SU2TableGenerator_NICFD:
         """
         fluid_data_out = fluid_data_mesh.copy()
         for i in range(len(fluid_data_mesh)):
-            self._DataGenerator.UpdateFluid(fluid_data_mesh[i, EntropicVars.Density.value], fluid_data_mesh[i, EntropicVars.Energy.value])
-            state_vector, correct_phase = self._DataGenerator.GetStateVector()
-            if correct_phase:
-                fluid_data_out[i, :] = state_vector
-            else:
+            try:
+                self._DataGenerator.UpdateFluid(fluid_data_mesh[i, EntropicVars.Density.value], fluid_data_mesh[i, EntropicVars.Energy.value])
+                state_vector, correct_phase = self._DataGenerator.GetStateVector()
+                if correct_phase:
+                    fluid_data_out[i, :] = state_vector
+                else:
+                    fluid_data_out[i, :] = None
+            except:
                 fluid_data_out[i, :] = None
         fluid_data_out = fluid_data_out[~np.isnan(fluid_data_out[:,0]),:]
         return fluid_data_out
@@ -251,8 +254,8 @@ class SU2TableGenerator_NICFD:
         ix_ref = self.__ApplyRefinement(fluid_data_norm)
 
         # Regenerate table including refinement locations
-        rhoe_norm = fluid_data_norm[:, [EntropicVars.Density.value, EntropicVars.Energy.value]]
-        rhoe_norm_ref = rhoe_norm[ix_ref, :]
+        rhoe_norm_mesh = fluid_data_norm[:, [EntropicVars.Density.value, EntropicVars.Energy.value]]
+        rhoe_norm_ref = rhoe_norm_mesh[ix_ref, :]
         rhoe_mesh_norm = self.__Compute2DMesh(rhoe_norm, ref_pts=rhoe_norm_ref,show=True)
 
         # Extract thermodynamic state variables of refined table
