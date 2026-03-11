@@ -19,18 +19,18 @@
 # Description:                                                                                |
 #  Configuration generator for generating a data-driven manifold for MM.                      |
 #                                                                                             |  
-# Version: 1.0.0                                                                              |
+# Version: 2.0.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
 # Test case for MM fluid: generate manifold generation configuration 
 
 # Import EntropicAI configuration module
-from Common.DataDrivenConfig import EntropicAIConfig 
+from su2dataminer.config import Config_NICFD
 import os 
 
 # Initiating empty configuration
-Config = EntropicAIConfig()
+Config = Config_NICFD()
 
 # Define fluid name. Fluid is selected from RefProp library. Mixtures are not yet supported!
 Config.SetFluid("MM")

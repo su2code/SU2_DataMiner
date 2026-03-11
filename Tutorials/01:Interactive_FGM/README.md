@@ -6,7 +6,7 @@
 | Requires   | ```SU2 DataMiner```        |
 | Uses | bin/GenerateConfig.py|
 | Author | E.C. Bunschoten |
-| Version | 1.0.0 |
+| Version | 2.0.0 |
 
 ## Goals
 The goal of this tutorial is to set up a flamelet-based manifold configuration through ```SU2 DataMiner``` through the interactive menu functionality. 

@@ -18,3 +18,4 @@ pygad
 paretoset
 pymoo
 concave_hull
+pydata-sphinx-theme

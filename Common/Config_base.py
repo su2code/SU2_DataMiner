@@ -49,6 +49,7 @@ class Config:
     _alpha_expo:float = DefaultProperties.init_learning_rate_expo       # Initial learning rate exponent (base 10)
     _lr_decay:float = DefaultProperties.learning_rate_decay             # Learning rate decay parameter.
     _batch_expo:int = DefaultProperties.batch_size_exponent             # Mini-batch size exponent (base 2).
+    _n_epochs:int = DefaultProperties.N_epochs                          # Maximum number of training epochs.
     _hidden_layer_architecture:list[int] = DefaultProperties.hidden_layer_architecture  # Hidden layer perceptron count.
     _activation_function:str = DefaultProperties.activation_function    # Hidden layer activation function name.
 
@@ -105,7 +106,7 @@ class Config:
     def SetConcatenationFileHeader(self, header:str=DefaultProperties.output_file_header):
         """Define the file name header of the processed fluid manifold data.
 
-        :param header: manifold data file header, defaults to DefaultProperties.output_file_header
+        :param header: manifold data file header, defaults to "fluid_data"
         :type header: str, optional
         """
 
@@ -142,7 +143,7 @@ class Config:
         return self._config_name 
     
     def SetControllingVariables(self, names_cv:list[str]):
-        """Define the set of controlling variables used for defining the manifold.
+        """Define the set of controlling variable names used as inputs for the networks of the data-driven fluid model.
 
         :param names_cv: list with controlling variable names.
         :type names_cv: list[str]
@@ -155,7 +156,7 @@ class Config:
         return 
     
     def GetControllingVariables(self):
-        """Get the controlling variables used for defining the manifold.
+        """Retrieve the set of controlling variable names used as inputs for the networks of the data-driven fluid model.
 
         :return: list of controlling variable names.
         :rtype: list[str]
@@ -166,7 +167,7 @@ class Config:
     def SetTrainFraction(self, input:float=DefaultProperties.train_fraction):
         """Define the fraction of fluid data used for MLP training.
 
-        :param input: fluid data train fraction, defaults to DefaultProperties.train_fraction
+        :param input: fluid data train fraction, defaults to 0.8
         :type input: float, optional
         :raises Exception: if provided value lies outside 0-1.
         """
@@ -180,7 +181,7 @@ class Config:
     def SetTestFraction(self, input:float=DefaultProperties.test_fraction):
         """Define the fraction of fluid data used for MLP prediction accuracy evaluation.
 
-        :param input: fluid data test set fraction, defaults to DefaultProperties.test_fraction
+        :param input: fluid data test set fraction, defaults to 0.1
         :type input: float, optional
         :raises Exception: if provided value lies outside 0-1.
         """
@@ -220,7 +221,7 @@ class Config:
     def SetAlphaExpo(self, alpha_expo_in:float=DefaultProperties.init_learning_rate_expo):
         """Define the initial learning rate exponent (base 10).
 
-        :param alpha_expo_in: log10 of initial learning rate, defaults to DefaultProperties.init_learning_rate_expo
+        :param alpha_expo_in: log10 of initial learning rate, defaults to -1.8269
         :type alpha_expo_in: float, optional
         :raises Exception: if provided value is positive.
         """
@@ -251,8 +252,29 @@ class Config:
         self._lr_decay = lr_decay_in
         return 
     
+    def SetNEpochs(self, n_epochs_in:int=DefaultProperties.N_epochs):
+        """Specify the maximum number of epochs for training of the networks.
+
+        :param n_epochs_in: maximum number of epochs, defaults to 1000
+        :type n_epochs_in: int, optional
+        :raises Exception: if the number is lower than 1.
+        """
+        if n_epochs_in < 1:
+            raise Exception("Number of epochs should be higher than 1")
+        
+        self._n_epochs = int(n_epochs_in)
+        return 
+    
+    def GetNEpochs(self):
+        """Retrieve the maximum number of epochs the networks are trained for.
+
+        :return: maximum number of training epochs.
+        :rtype: int
+        """
+        return self._n_epochs
+    
     def SetBatchExpo(self, batch_expo_in:int=DefaultProperties.batch_size_exponent):
-        """Set the mini-batch size exponent for MLP training.
+        """Set the mini-batch size exponent (base 2) for MLP training.
 
         :param batch_expo_in: Mini-batch size exponent (base 2) used for MLP training, defaults to DefaultProperties.batch_size_exponent
         :type batch_expo_in: int, optional
@@ -272,13 +294,27 @@ class Config:
         """
         return self._batch_expo 
     
+    def __HiddenLayerChecks(self,hidden_layer_architecture:list[int]):
+        if not hidden_layer_architecture:
+            raise Exception("At least one hidden layer should be specified.")
+        for h in hidden_layer_architecture:
+            if h < 1:
+                raise Exception("Number of nodes in the hidden layers should be positive.")
+            if type(h) is not int:
+                raise Exception("Nodes in the hidden layers should be integers.")
+        return 
+    
     def SetHiddenLayerArchitecture(self, hidden_layer_architecture:list[int]=DefaultProperties.hidden_layer_architecture):
         """
         Define the hidden layer architecture of the multi-layer perceptron used for the MLP-based manifold.
 
-        :param hidden_layer_architecture: listed neuron count per hidden layer, defaults to DefaultProperties.hidden_layer_architecture
+        :param hidden_layer_architecture: listed neuron count per hidden layer, defaults to [20,20,20]
         :type hidden_layer_architecture: list[int], optional
+        :raises Exception: if an empty list is provided or if input contains non-integer data or the number of nodes is less than 1.
         """
+
+        self.__HiddenLayerChecks(hidden_layer_architecture)
+
         self._hidden_layer_architecture = []
         for n in hidden_layer_architecture:
             self._hidden_layer_architecture.append(n)
@@ -292,16 +328,37 @@ class Config:
         """
         return self._hidden_layer_architecture
     
+    def __WeightsCheck(self, weights:list[np.ndarray[float]]):
+        if not weights:
+            raise Exception("Weights list should contain at least one array.")
+        for i in range(len(weights)-1):
+            w_i = weights[i]
+            w_ip = weights[i+1]
+            if np.shape(w_i)[1] != np.shape(w_ip)[0]:
+                raise Exception("Weight arrays are improperly formatted. Check rows and columns.")
+        return 
+    
+        
     def SetWeights(self, weights:list[np.ndarray[float]]):
         """Store the weight values of the neural network.
 
         :param weights: weight arrays for the network hidden layers.
         :type weights: list[np.ndarray[float]]
+        :raises: Exception: if an empty list is provided or the weights arrays are improperly formatted.
         """
+        self.__WeightsCheck(weights)
 
         self._MLP_weights = []
         for w in weights:
             self._MLP_weights.append(w)
+        return 
+    
+    def __BiasesCheck(self, biases:list[np.ndarray[float]]):
+        if not biases:
+            raise Exception("Biases list should contain at least one entry.")
+        for b in biases:
+            if b.size == 0:
+                raise Exception("Biases for hidden layers should contain at least one value.")
         return 
     
     def SetBiases(self, biases:list[np.ndarray[float]]):
@@ -309,16 +366,19 @@ class Config:
 
         :param weights: bias arrays for the network hidden layers.
         :type weights: list[np.ndarray[float]]
+        :raises: Exception: if an empty list is provided or contains empty arrays.
         """
+        self.__BiasesCheck(biases)
+
         self._MLP_biases = []
         for w in biases:
             self._MLP_biases.append(w)
         return 
     
     def SetActivationFunction(self, activation_function_in:str=DefaultProperties.activation_function):
-        """Define the hidden layer activation function for the MLP-based manifold.
+        """Define the hidden layer activation function for the MLP-based manifold. See Common.Properties.ActivationFunctionOptions for the supported options.
 
-        :param activation_function_in: hidden layer activation function name, defaults to DefaultProperties.activation_function
+        :param activation_function_in: hidden layer activation function name, defaults to "gelu"
         :type activation_function_in: str, optional
         :raises Exception: if the provided name does not appear in the list of available activation function options.
         """
@@ -346,6 +406,7 @@ class Config:
         self._alpha_expo = trainer.alpha_expo
         self._lr_decay = trainer.lr_decay
         self._batch_expo = trainer.batch_expo
+        self._n_epochs = trainer.n_epochs
         self._hidden_layer_architecture = trainer.architecture.copy()
         self._activation_function = trainer.activation_function
 
@@ -361,7 +422,7 @@ class Config:
         """Return values for weights and biases for the hidden layers in the MLP.
 
         :return: weight arrays, biases arrays
-        :rtype: list[np.ndarray[float]]
+        :rtype: tuple(np.ndarray[float])
         """
         return self._MLP_weights, self._MLP_biases
     

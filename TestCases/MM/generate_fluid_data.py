@@ -18,16 +18,16 @@
 #                                                                                             |
 # Description:                                                                                |
 #  Routine for fluid data generation for the MM test case.                                    |  
-# Version: 1.0.0                                                                              |
+# Version: 2.0.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
 # Import EntropicAI configuration and data generation module.
-from Common.DataDrivenConfig import EntropicAIConfig 
-from Data_Generation.DataGenerator_NICFD import DataGenerator_CoolProp 
+from su2dataminer.config import Config_NICFD
+from su2dataminer.generate_data import DataGenerator_CoolProp
 
 # Load configuration.
-Config = EntropicAIConfig("MM_test.cfg")
+Config = Config_NICFD("MM_test.cfg")
 
 # Initiate data-generator object.
 D = DataGenerator_CoolProp(Config)

@@ -20,7 +20,7 @@
 #  Generate the MM siloxane fluid data set used for physics-informed neural network training  |
 #  by Evert Bunschoten during his contribution to the fifth annual SU2 conference in 2024.    |
 #                                                                                             |
-# Version: 1.0.0                                                                              |
+# Version: 2.0.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 

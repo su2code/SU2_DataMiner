@@ -6,7 +6,7 @@
 | Requires   | ```SU2 DataMiner```,```MPI```      |
 | Uses | bin/PlotFlamelets.py|
 | Author | E.C. Bunschoten |
-| Version | 1.0.0 |
+| Version | 2.0.0 |
 
 ## Goals
 

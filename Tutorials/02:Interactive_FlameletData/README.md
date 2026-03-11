@@ -6,7 +6,7 @@
 | Requires   | ```SU2 DataMiner```,```MPI```      |
 | Uses | bin/GenerateFlameletData.py|
 | Author | E.C. Bunschoten |
-| Version | 1.0.0 |
+| Version | 2.0.0 |
 
 ## Goals
 

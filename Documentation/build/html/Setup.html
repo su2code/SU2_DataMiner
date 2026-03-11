@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Set-up and Requirements &#8212; SU2 DataMiner 2.0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=4f649999" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=cb25574f" />
+    <script src="_static/documentation_options.js?v=51b770b3"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="DataDrivenConfig Base Class" href="Config.html" />
+    <link rel="prev" title="SU2 DataMiner" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="set-up-and-requirements">
+<span id="label-setup"></span><h1>Set-up and Requirements<a class="headerlink" href="#set-up-and-requirements" title="Link to this heading">¶</a></h1>
+<p><em>SU2 DataMiner</em> is an open-source, python-based software suite that is available on <a class="reference external" href="https://github.com/EvertBunschoten/SU2_DataMiner.git">GitHub</a>.</p>
+<section id="requirements">
+<h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">¶</a></h2>
+<p><em>SU2 DataMiner</em> is currently only compatible with Linux-based operating systems. The following programs are required to use <em>SU2 DataMiner</em>:</p>
+<ul class="simple">
+<li><p>python 3.11 or higher</p></li>
+<li><p>git</p></li>
+<li><p>pip</p></li>
+<li><p>build-essential</p></li>
+</ul>
+<p>Optional:</p>
+<ul class="simple">
+<li><p>python3-virtualenv</p></li>
+</ul>
+</section>
+<section id="downloading-the-source-code">
+<h2>Downloading the source code<a class="headerlink" href="#downloading-the-source-code" title="Link to this heading">¶</a></h2>
+<p>The <em>SU2 DataMiner</em> source code can be downloaded from GitHub by cloning the repository</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">EvertBunschoten</span><span class="o">/</span><span class="n">SU2_DataMiner</span><span class="o">.</span><span class="n">git</span> <span class="o">&lt;</span><span class="n">PATH_TO_SOURCE</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<p>where <cite>&lt;PATH_TO_SOURCE&gt;</cite> refers to the target location where the <em>SU2 DataMiner</em> source code will be stored.</p>
+<p>For python to have access to the various modules in <em>SU2 DataMiner</em>, it is recommended to update the <cite>PATH</cite> and <cite>PYTHONPATH</cite> environment
+variables by writing the following lines in your <cite>.bashrc</cite> file:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>export SU2_DM_HOME=&lt;PATH_TO_SOURCE&gt;
+export PYTHONPATH=$PYTHONPATH:$SU2_DM_HOME
+export PATH=$PATH:$SU2_DM_HOME/bin
+</pre></div>
+</div>
+<p>After updating the environment variables by opening a new terminal or running</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">source</span> <span class="o">.</span><span class="n">bashrc</span>
+</pre></div>
+</div>
+<p>your system will be able to access the <em>SU2 DataMiner</em> python modules.</p>
+</section>
+<section id="creating-the-python-environment">
+<h2>Creating the python environment<a class="headerlink" href="#creating-the-python-environment" title="Link to this heading">¶</a></h2>
+<p><em>SU2 DataMiner</em> needs a number of python modules to function. These modules are listed in <cite>required_packages.txt</cite>. You can
+install these manually, but it is recommended to create a separate python environment containing all the necessary packages.
+To create the python environment named <cite>su2dm_venv</cite> with all the required python modules, run the following commands in your terminal:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>&gt;&gt;&gt; python3 -m venv su2dm_venv
+&gt;&gt;&gt; virtualenv -p /usr/bin/python3 su2dm_venv
+&gt;&gt;&gt; . su2dm_venv/bin/activate
+&gt;&gt;&gt; python3 -m pip install -r $SU2DATAMINER_HOME/required_packages.txt &gt; pip_install_log.log
+</pre></div>
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">SU2 DataMiner</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Set-up and Requirements</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#requirements">Requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#downloading-the-source-code">Downloading the source code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#creating-the-python-environment">Creating the python environment</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="Config.html">DataDrivenConfig Base Class</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="Tutorials/create_configs.html">Creating SU2 DataMiner Configurations</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">SU2 DataMiner</a></li>
+      <li>Next: <a href="Config.html" title="next chapter">DataDrivenConfig Base Class</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2025, E.C.Bunschoten.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 7.2.6</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/Setup.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

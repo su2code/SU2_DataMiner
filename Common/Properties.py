@@ -151,7 +151,8 @@ class DefaultSettings_NICFD(DefaultProperties):
     activation_function:str = "exponential"
     config_type:str = "EntropicAI"
     supported_state_vars:list[str] = ["s","T","p","c2","dTdrho_e","dTde_rho","dpdrho_e","dpde_rho"]
-
+    supported_backends:list[str] = ["HEOS","PR", "SRK", "IF97","REFPROP"]
+    
 class DefaultSettings_FGM(DefaultProperties):
     config_name:str = "config_FGM"
 

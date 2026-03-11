@@ -1653,6 +1653,7 @@ class TrainMLP:
         self.alpha_expo = self._Config.GetAlphaExpo()
         self.lr_decay = self._Config.GetLRDecay()
         self.batch_expo = self._Config.GetBatchExpo()
+        self.n_epochs = self._Config.GetNEpochs()
         self.activation_function = self._Config.GetActivationFunction()
         self.architecture = []
         for n in self._Config.GetHiddenLayerArchitecture():

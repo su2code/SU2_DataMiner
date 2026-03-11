@@ -20,7 +20,7 @@
 #  Generate the SU2 DataMiner configuration class used by Evert Bunschoten for his            |
 #  contribution to the fifth annual SU2 conference in 2024.                                   |
 #                                                                                             |
-# Version: 1.0.0                                                                              |
+# Version: 2.0.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 import os 

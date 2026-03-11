@@ -1,0 +1,1016 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>SU2 DataMiner Configuration &#8212; SU2 DataMiner 2.0.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=a746c00c" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=51b770b3"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'Config';</script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Fluid Data Generation" href="DataGeneration.html" />
+    <link rel="prev" title="Requirements and Set-Up" href="Installation.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">SU2 DataMiner 2.0.0 documentation</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="Installation.html">
+    Requirements and Set-Up
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="#">
+    SU2 DataMiner Configuration
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="DataGeneration.html">
+    Fluid Data Generation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="MLPTrainers.html">
+    MLPTrainers
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="Installation.html">
+    Requirements and Set-Up
+  </a>
+</li>
+
+
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="#">
+    SU2 DataMiner Configuration
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="DataGeneration.html">
+    Fluid Data Generation
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="MLPTrainers.html">
+    MLPTrainers
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"></div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">SU2 DataMiner Configuration</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="su2-dataminer-configuration">
+<span id="configurations"></span><h1><a class="toc-backref" href="#id1" role="doc-backlink">SU2 DataMiner Configuration</a><a class="headerlink" href="#su2-dataminer-configuration" title="Link to this heading">#</a></h1>
+<p><em>SU2 DataMiner</em> uses a configuration class in order to store important information regarding the data generation, data mining, and
+manifold generation processes. This page lists some of the important functions of the <em>Config</em> class which acts as the <a class="reference internal" href="#base"><span class="std std-ref">base</span></a>
+class for configurations specific to the application such as <a class="reference internal" href="#nicfd"><span class="std std-ref">NICFD</span></a> and FGM <a class="reference internal" href="#fgm"><span class="std std-ref">FGM</span></a>, for which additional settings can be specified.</p>
+<nav class="contents" id="contents">
+<p class="topic-title">Contents</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#su2-dataminer-configuration" id="id1">SU2 DataMiner Configuration</a></p>
+<ul>
+<li><p><a class="reference internal" href="#base-config-class" id="id2">Base Config Class</a></p></li>
+<li><p><a class="reference internal" href="#configuration-for-real-gas-applications" id="id3">Configuration for real-gas applications</a></p></li>
+<li><p><a class="reference internal" href="#configuration-for-combustion-applications" id="id4">Configuration for combustion applications</a></p></li>
+</ul>
+</li>
+</ul>
+</nav>
+<section id="base-config-class">
+<span id="base"></span><h2><a class="toc-backref" href="#id2" role="doc-backlink">Base Config Class</a><a class="headerlink" href="#base-config-class" title="Link to this heading">#</a></h2>
+<p><em>SU2 DataMiner</em> uses a configuration class in order to store important information regarding the data generation, data mining, and
+manifold generation processes. This page lists some of the important functions of the <em>Config</em> class which acts as the base
+class for configurations specific to the application such as <a class="reference internal" href="#nicfd"><span class="std std-ref">NICFD</span></a> and FGM <a class="reference internal" href="#fgm"><span class="std std-ref">FGM</span></a>, for which additional settings can be specified.</p>
+<section id="storage-location-and-configuration-information">
+<h3>Storage Location and Configuration Information<a class="headerlink" href="#storage-location-and-configuration-information" title="Link to this heading">#</a></h3>
+<p>During the various processes in <em>SU2 DataMiner</em>, data are generated, processed, and analyzed. All information regarding these
+processes is stored on the current hardware in a user-defined location. <em>SU2 DataMiner</em> configurations can be saved locally under
+different names in order to keep track of various data sets and manifolds at once.
+The following functions can be used to manipulate and access the storage location for fluid data and manifolds of the <em>SU2 DataMiner</em> configuration
+and save and load configurations.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetConfigName">
+<span class="sig-name descname"><span class="pre">SetConfigName</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetConfigName" title="Link to this definition">#</a></dt>
+<dd><p>Set the name for the current SU2 DataMiner configuration. When saving the configuration, it will be saved under this name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>config_name</strong> (<em>str</em>) – SU2 DataMiner configuration name.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetConfigName">
+<span class="sig-name descname"><span class="pre">GetConfigName</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetConfigName" title="Link to this definition">#</a></dt>
+<dd><p>Get the name of the current SU2 DataMiner configuration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>SU2 DataMiner configuration name.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SaveConfig">
+<span class="sig-name descname"><span class="pre">SaveConfig</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SaveConfig" title="Link to this definition">#</a></dt>
+<dd><p>Save the current SU2 DataMiner configuration.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetOutputDir">
+<span class="sig-name descname"><span class="pre">SetOutputDir</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetOutputDir" title="Link to this definition">#</a></dt>
+<dd><p>Define the output directory where all raw and processed fluid data and manifold data are saved.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>output_dir</strong> (<em>str</em>) – output directory.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if provided directory does not exist on the current hardware.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetOutputDir">
+<span class="sig-name descname"><span class="pre">GetOutputDir</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetOutputDir" title="Link to this definition">#</a></dt>
+<dd><p>Get the output directory where raw and processed fluid data and manifold data are stored.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>Exception</strong> – if the output directory of the current SU2 DataMiner configuration is not present on the current hardware.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>output directory.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.PrintBanner">
+<span class="sig-name descname"><span class="pre">PrintBanner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.PrintBanner" title="Link to this definition">#</a></dt>
+<dd><p>Print the main banner for the SU2 DataMiner configuration in the terminal.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetConcatenationFileHeader">
+<span class="sig-name descname"><span class="pre">SetConcatenationFileHeader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">header</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'fluid_data'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetConcatenationFileHeader" title="Link to this definition">#</a></dt>
+<dd><p>Define the file name header of the processed fluid manifold data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>header</strong> (<em>str</em><em>, </em><em>optional</em>) – manifold data file header, defaults to “fluid_data”</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetConcatenationFileHeader">
+<span class="sig-name descname"><span class="pre">GetConcatenationFileHeader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetConcatenationFileHeader" title="Link to this definition">#</a></dt>
+<dd><p>Get the file name header of the processed fluid manifold data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>fluid manifold data file header.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="settings-for-machine-learning-applications">
+<h3>Settings for Machine Learning Applications<a class="headerlink" href="#settings-for-machine-learning-applications" title="Link to this heading">#</a></h3>
+<p>The data-driven fluid modeling applications of <em>SU2 DataMiner</em> involve the use of multi-layer perceptrons to calculate the thermodynamic state of the fluid during flow calculations in SU2.
+The values of the weights and biases, the hidden layer architecture(s) and other parameters needed to train the network can be stored in and retrieved from the <em>SU2 DataMiner</em> configuration.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetControllingVariables">
+<span class="sig-name descname"><span class="pre">SetControllingVariables</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names_cv</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetControllingVariables" title="Link to this definition">#</a></dt>
+<dd><p>Define the set of controlling variable names used as inputs for the networks of the data-driven fluid model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>names_cv</strong> (<em>list</em><em>[</em><em>str</em><em>]</em>) – list with controlling variable names.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetControllingVariables">
+<span class="sig-name descname"><span class="pre">GetControllingVariables</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetControllingVariables" title="Link to this definition">#</a></dt>
+<dd><p>Retrieve the set of controlling variable names used as inputs for the networks of the data-driven fluid model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of controlling variable names.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetTrainFraction">
+<span class="sig-name descname"><span class="pre">SetTrainFraction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.8</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetTrainFraction" title="Link to this definition">#</a></dt>
+<dd><p>Define the fraction of fluid data used for MLP training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>input</strong> (<em>float</em><em>, </em><em>optional</em>) – fluid data train fraction, defaults to 0.8</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if provided value lies outside 0-1.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetTrainFraction">
+<span class="sig-name descname"><span class="pre">GetTrainFraction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetTrainFraction" title="Link to this definition">#</a></dt>
+<dd><p>Get the fraction of fluid data used for MLP training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>fluid data train fraction.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetTestFraction">
+<span class="sig-name descname"><span class="pre">SetTestFraction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.1</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetTestFraction" title="Link to this definition">#</a></dt>
+<dd><p>Define the fraction of fluid data used for MLP prediction accuracy evaluation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>input</strong> (<em>float</em><em>, </em><em>optional</em>) – fluid data test set fraction, defaults to 0.1</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if provided value lies outside 0-1.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetTestFraction">
+<span class="sig-name descname"><span class="pre">GetTestFraction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetTestFraction" title="Link to this definition">#</a></dt>
+<dd><p>Get the fraction of fluid data used for MLP accuracy evaluation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>fluid data test fraction.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>The following functions are used to specify the parameters used for training the networks on the fluid data. Currently, <em>SU2 DataMiner</em> uses supervised, gradient-based methods for training where the learning
+rate follows the exponential decay method. The value of the initial learning rate and decay parameter can be accessed through</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetAlphaExpo">
+<span class="sig-name descname"><span class="pre">SetAlphaExpo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha_expo_in</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-1.8269</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetAlphaExpo" title="Link to this definition">#</a></dt>
+<dd><p>Define the initial learning rate exponent (base 10).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>alpha_expo_in</strong> (<em>float</em><em>, </em><em>optional</em>) – log10 of initial learning rate, defaults to -1.8269</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if provided value is positive.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetAlphaExpo">
+<span class="sig-name descname"><span class="pre">GetAlphaExpo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetAlphaExpo" title="Link to this definition">#</a></dt>
+<dd><p>Get the initial learning rate exponent (base 10).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>log10 of initial learning rate.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetLRDecay">
+<span class="sig-name descname"><span class="pre">SetLRDecay</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lr_decay_in</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.98959</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetLRDecay" title="Link to this definition">#</a></dt>
+<dd><p>Set the exponential learning rate decay parameter for MLP training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>lr_decay_in</strong> (<em>float</em><em>, </em><em>optional</em>) – Exponential learning rate decay parameter, defaults to DefaultProperties.learning_rate_decay</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if the learning rate decay parameter is not within zero and one.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetLRDecay">
+<span class="sig-name descname"><span class="pre">GetLRDecay</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetLRDecay" title="Link to this definition">#</a></dt>
+<dd><p>Get the exponential learning rate decay parameter for MLP training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Exponential learning rate decay parameter.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>The networks are trained using batches of training data. The size of the training batches and the maximum number of epochs for which the networks are trained can be accessed through</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetBatchExpo">
+<span class="sig-name descname"><span class="pre">SetBatchExpo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_expo_in</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">6</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetBatchExpo" title="Link to this definition">#</a></dt>
+<dd><p>Set the mini-batch size exponent (base 2) for MLP training.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>batch_expo_in</strong> (<em>int</em><em>, </em><em>optional</em>) – Mini-batch size exponent (base 2) used for MLP training, defaults to DefaultProperties.batch_size_exponent</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if provided value is lower than or equal to zero.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetBatchExpo">
+<span class="sig-name descname"><span class="pre">GetBatchExpo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetBatchExpo" title="Link to this definition">#</a></dt>
+<dd><p>Get the MLP training mini-batch size exponent.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>mini-batch size exponent (base 2)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetNEpochs">
+<span class="sig-name descname"><span class="pre">SetNEpochs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_epochs_in</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1000</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetNEpochs" title="Link to this definition">#</a></dt>
+<dd><p>Specify the maximum number of epochs for training of the networks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>n_epochs_in</strong> (<em>int</em><em>, </em><em>optional</em>) – maximum number of epochs, defaults to 1000</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if the number is lower than 1.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetNEpochs">
+<span class="sig-name descname"><span class="pre">GetNEpochs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetNEpochs" title="Link to this definition">#</a></dt>
+<dd><p>Retrieve the maximum number of epochs the networks are trained for.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>maximum number of training epochs.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Additionally, the number of nodes in the hidden layers of the networks and activation function can be accessed. <em>SU2 DataMiner</em> currently supports the use of a single activation function to all hidden layers which can be selected from a list of options and the input and output layers use a linear function.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetHiddenLayerArchitecture">
+<span class="sig-name descname"><span class="pre">SetHiddenLayerArchitecture</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hidden_layer_architecture</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[20,</span> <span class="pre">20,</span> <span class="pre">20]</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetHiddenLayerArchitecture" title="Link to this definition">#</a></dt>
+<dd><p>Define the hidden layer architecture of the multi-layer perceptron used for the MLP-based manifold.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>hidden_layer_architecture</strong> (<em>list</em><em>[</em><em>int</em><em>]</em><em>, </em><em>optional</em>) – listed neuron count per hidden layer, defaults to [20,20,20]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if an empty list is provided or if input contains non-integer data or the number of nodes is less than 1.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetHiddenLayerArchitecture">
+<span class="sig-name descname"><span class="pre">GetHiddenLayerArchitecture</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetHiddenLayerArchitecture" title="Link to this definition">#</a></dt>
+<dd><p>Get the hidden layer architecture of the multi-layer perceptron used for the MLP-based manifold.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list with number of neurons per hidden layer.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetActivationFunction">
+<span class="sig-name descname"><span class="pre">SetActivationFunction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">activation_function_in</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'gelu'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetActivationFunction" title="Link to this definition">#</a></dt>
+<dd><p>Define the hidden layer activation function for the MLP-based manifold. See Common.Properties.ActivationFunctionOptions for the supported options.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>activation_function_in</strong> (<em>str</em><em>, </em><em>optional</em>) – hidden layer activation function name, defaults to “gelu”</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if the provided name does not appear in the list of available activation function options.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetActivationFunction">
+<span class="sig-name descname"><span class="pre">GetActivationFunction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetActivationFunction" title="Link to this definition">#</a></dt>
+<dd><p>Get the hidden layer activation function name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>hidden layer activation function name.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Finally, the weights and biases data can be accessed in the configuration using</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetWeights">
+<span class="sig-name descname"><span class="pre">SetWeights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetWeights" title="Link to this definition">#</a></dt>
+<dd><p>Store the weight values of the neural network.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>weights</strong> (<em>list</em><em>[</em><em>np.ndarray</em><em>[</em><em>float</em><em>]</em><em>]</em>) – weight arrays for the network hidden layers.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p>Exception: if an empty list is provided or the weights arrays are improperly formatted.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.SetBiases">
+<span class="sig-name descname"><span class="pre">SetBiases</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">biases</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.SetBiases" title="Link to this definition">#</a></dt>
+<dd><p>Store the bias values of the neural network.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>weights</strong> (<em>list</em><em>[</em><em>np.ndarray</em><em>[</em><em>float</em><em>]</em><em>]</em>) – bias arrays for the network hidden layers.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p>Exception: if an empty list is provided or contains empty arrays.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.GetWeightsBiases">
+<span class="sig-name descname"><span class="pre">GetWeightsBiases</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.GetWeightsBiases" title="Link to this definition">#</a></dt>
+<dd><p>Return values for weights and biases for the hidden layers in the MLP.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>weight arrays, biases arrays</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple(np.ndarray[float])</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>All the settings regarding the training parameters, architecture, weights, and biases of the trained network can be stored automatically after training a network from the <a class="reference internal" href="MLPTrainers.html#trainer"><span class="std std-ref">MLPTrainers</span></a> class</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.UpdateMLPHyperParams">
+<span class="sig-name descname"><span class="pre">UpdateMLPHyperParams</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.UpdateMLPHyperParams" title="Link to this definition">#</a></dt>
+<dd><p>Retrieve the weights and biases from the MLP trainer class and store them in the configuration class.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>trainer</strong> (<em>TrainMLP</em>) – reference to trainer class used to train the network.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>To use the network stored in the configuration in SU2 simulations, the network information needs to be written to an ASCII file such that it can be loaded in SU2 through the <a class="reference external" href="https://github.com/EvertBunschoten/MLPCpp.git">MLPCpp</a> module.
+All relevant information about the network is automatically written to a properly formatted ASCII file using</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.Config_base.Config.WriteSU2MLP">
+<span class="sig-name descname"><span class="pre">WriteSU2MLP</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_name_out</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.Config_base.Config.WriteSU2MLP" title="Link to this definition">#</a></dt>
+<dd><p>Write ASCII MLP file containing the network weights and biases from the data stored in the configuration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_name_out</strong> (<em>str</em>) – MLP file name</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+<section id="configuration-for-real-gas-applications">
+<span id="nicfd"></span><h2><a class="toc-backref" href="#id3" role="doc-backlink">Configuration for real-gas applications</a><a class="headerlink" href="#configuration-for-real-gas-applications" title="Link to this heading">#</a></h2>
+<p>The following section describes the most important functions of the Config_NICFD class.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.DataDrivenConfig.Config_NICFD.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">load_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.DataDrivenConfig.Config_NICFD.__init__" title="Link to this definition">#</a></dt>
+<dd><p>SU2 DataMiner configuration class for real-gas applications.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>load_file</strong> (<em>str</em><em>, </em><em>optional</em>) – configuration file name to load, defaults to None</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if loaded configuration is incompatible with the Config_NICFD class.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.DataDrivenConfig.Config_NICFD.SetFluid">
+<span class="sig-name descname"><span class="pre">SetFluid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fluid_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Air'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.DataDrivenConfig.Config_NICFD.SetFluid" title="Link to this definition">#</a></dt>
+<dd><p>Define the fluid name used for entropic data generation. By default, “Air” is used. Specify a list of fluids for mixtures.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fluid_name</strong> (<em>str</em><em> or </em><em>list</em><em>[</em><em>str</em><em>]</em>) – CoolProp fluid name or list of names.</p>
+</dd>
+<dt class="field-even">Raise<span class="colon">:</span></dt>
+<dd class="field-even"><p>Exception: If the fluid could not be defined in CoolProp.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="Common.DataDrivenConfig.Config_NICFD.SetEquationOfState">
+<span class="sig-name descname"><span class="pre">SetEquationOfState</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">EOS_type_in</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'HEOS'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Common.DataDrivenConfig.Config_NICFD.SetEquationOfState" title="Link to this definition">#</a></dt>
+<dd><p>Define the equation of state backend used by CoolProp to generate fluid data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>EOS_type_in</strong> (<em>str</em><em>, </em><em>optional</em>) – backend used by CoolProp, defaults to “HEOS”</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – if the specified backend is not supported.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<section id="example">
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading">#</a></h3>
+<p>The code snippet below demonstrates the</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">su2dataminer.config</span> <span class="kn">import</span> <span class="n">Config_NICFD</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">Config_NICFD</span><span class="p">()</span>
+<span class="n">config</span><span class="o">.</span><span class="n">SetFluid</span><span class="p">(</span><span class="s2">&quot;MM&quot;</span><span class="p">)</span>
+<span class="n">config</span><span class="o">.</span><span class="n">SetEquationOfState</span><span class="p">(</span><span class="s2">&quot;HEOS&quot;</span><span class="p">)</span>
+<span class="n">config</span><span class="o">.</span><span class="n">SetName</span><span class="p">(</span><span class="s2">&quot;siloxane_MM_heos&quot;</span><span class="p">)</span>
+<span class="n">config</span><span class="o">.</span><span class="n">UseAutoRange</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">config</span><span class="o">.</span><span class="n">PrintBanner</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="configuration-for-combustion-applications">
+<span id="fgm"></span><h2><a class="toc-backref" href="#id4" role="doc-backlink">Configuration for combustion applications</a><a class="headerlink" href="#configuration-for-combustion-applications" title="Link to this heading">#</a></h2>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="Installation.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Requirements and Set-Up</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="DataGeneration.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Fluid Data Generation</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#base-config-class">Base Config Class</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#storage-location-and-configuration-information">Storage Location and Configuration Information</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetConfigName"><code class="docutils literal notranslate"><span class="pre">SetConfigName()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetConfigName"><code class="docutils literal notranslate"><span class="pre">GetConfigName()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SaveConfig"><code class="docutils literal notranslate"><span class="pre">SaveConfig()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetOutputDir"><code class="docutils literal notranslate"><span class="pre">SetOutputDir()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetOutputDir"><code class="docutils literal notranslate"><span class="pre">GetOutputDir()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.PrintBanner"><code class="docutils literal notranslate"><span class="pre">PrintBanner()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetConcatenationFileHeader"><code class="docutils literal notranslate"><span class="pre">SetConcatenationFileHeader()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetConcatenationFileHeader"><code class="docutils literal notranslate"><span class="pre">GetConcatenationFileHeader()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#settings-for-machine-learning-applications">Settings for Machine Learning Applications</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetControllingVariables"><code class="docutils literal notranslate"><span class="pre">SetControllingVariables()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetControllingVariables"><code class="docutils literal notranslate"><span class="pre">GetControllingVariables()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetTrainFraction"><code class="docutils literal notranslate"><span class="pre">SetTrainFraction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetTrainFraction"><code class="docutils literal notranslate"><span class="pre">GetTrainFraction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetTestFraction"><code class="docutils literal notranslate"><span class="pre">SetTestFraction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetTestFraction"><code class="docutils literal notranslate"><span class="pre">GetTestFraction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetAlphaExpo"><code class="docutils literal notranslate"><span class="pre">SetAlphaExpo()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetAlphaExpo"><code class="docutils literal notranslate"><span class="pre">GetAlphaExpo()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetLRDecay"><code class="docutils literal notranslate"><span class="pre">SetLRDecay()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetLRDecay"><code class="docutils literal notranslate"><span class="pre">GetLRDecay()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetBatchExpo"><code class="docutils literal notranslate"><span class="pre">SetBatchExpo()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetBatchExpo"><code class="docutils literal notranslate"><span class="pre">GetBatchExpo()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetNEpochs"><code class="docutils literal notranslate"><span class="pre">SetNEpochs()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetNEpochs"><code class="docutils literal notranslate"><span class="pre">GetNEpochs()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetHiddenLayerArchitecture"><code class="docutils literal notranslate"><span class="pre">SetHiddenLayerArchitecture()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetHiddenLayerArchitecture"><code class="docutils literal notranslate"><span class="pre">GetHiddenLayerArchitecture()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetActivationFunction"><code class="docutils literal notranslate"><span class="pre">SetActivationFunction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetActivationFunction"><code class="docutils literal notranslate"><span class="pre">GetActivationFunction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetWeights"><code class="docutils literal notranslate"><span class="pre">SetWeights()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.SetBiases"><code class="docutils literal notranslate"><span class="pre">SetBiases()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.GetWeightsBiases"><code class="docutils literal notranslate"><span class="pre">GetWeightsBiases()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.UpdateMLPHyperParams"><code class="docutils literal notranslate"><span class="pre">UpdateMLPHyperParams()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.Config_base.Config.WriteSU2MLP"><code class="docutils literal notranslate"><span class="pre">WriteSU2MLP()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-for-real-gas-applications">Configuration for real-gas applications</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.DataDrivenConfig.Config_NICFD.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.DataDrivenConfig.Config_NICFD.SetFluid"><code class="docutils literal notranslate"><span class="pre">SetFluid()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Common.DataDrivenConfig.Config_NICFD.SetEquationOfState"><code class="docutils literal notranslate"><span class="pre">SetEquationOfState()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-for-combustion-applications">Configuration for combustion applications</a></li>
+</ul>
+  </nav></div>
+
+  <div class="sidebar-secondary-item">
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/Config.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, E.C.Bunschoten.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.16.1.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>

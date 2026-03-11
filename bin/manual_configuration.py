@@ -27,6 +27,7 @@
 from Common.Config_base import Config
 from Common.DataDrivenConfig import *
 
+import sys 
 from shutil import get_terminal_size
 
 # General print methods
@@ -35,6 +36,17 @@ def printhbar():
 
 def printwronginput():
     print("Wrong input, please try again.")
+    return 
+
+def processinput(header_message:str):
+    user_input:str = input(header_message)
+    checkabort(user_input)
+    return user_input 
+
+
+def checkabort(user_input:str):
+    if (user_input.lower()=="q" or (user_input.lower()=="quit")):
+        raise SystemExit("Aborting")
     return 
 
 def InsertConfigOption(Config_in_method, default_value, input_message:str):
@@ -49,11 +61,12 @@ def InsertConfigOption(Config_in_method, default_value, input_message:str):
     :type input_message: str
     """
     correct_input:bool = False 
+
     while not correct_input:
+        user_input = processinput(input_message)
         try:
             # Check if user input is valid.
             val_input = default_value
-            user_input = input(input_message)
             if not user_input == "":
                 val_input = type(default_value)(user_input)
             Config_in_method(val_input)
@@ -67,12 +80,12 @@ def InsertConfigOption(Config_in_method, default_value, input_message:str):
 def InsertEnumerateOption(Config_in_method, values_options:list, default_value, input_message:str):
     correct_input:bool = False 
     while not correct_input:
+        val_input = default_value
+        options_string = " (" + ",".join(("%i:%s" % (i+1, str(values_options[i])) for i in range(len(values_options)))) + ")"
+        default_string = " %s by default:" % str(default_value)
+        user_input = processinput(input_message + options_string + default_string)
         try:
             # Check if user input is valid.
-            val_input = default_value
-            options_string = " (" + ",".join(("%i:%s" % (i+1, str(values_options[i])) for i in range(len(values_options)))) + ")"
-            default_string = " %s by default:" % str(default_value)
-            user_input = input(input_message + options_string + default_string)
             if not user_input == "":
                 val_input = values_options[int(user_input)-1]
             Config_in_method(val_input)
@@ -106,7 +119,8 @@ def GeneralSettings(Config_in:Config):
     Config_in.PrintBanner()
 
     # Re-run configuration or save and exit.
-    statisfied_input:str = input("Save configuration and exit (1) or re-run configuration set-up (2)?")
+    statisfied_input:str = processinput("Save configuration and exit (1) or re-run configuration set-up (2)?")
+
     if int(statisfied_input) == 1:
         Config_in.SaveConfig()
         statisfied = True 
@@ -137,12 +151,12 @@ def ManualFlameletConfiguration():
         fuel_weights_default = Config_in.GetFuelWeights().copy()
         printhbar()
         while not correct_fuel_definition:
+            fuel_string:str = processinput("Insert comma-separated list of fuel species (%s by default): " % (",".join(s for s in fuel_definition_default)))
             try:
-                fuel_string:str = input("Insert comma-separated list of fuel species (%s by default): " % (",".join(s for s in fuel_definition_default)))
                 if not fuel_string == "":
                     fuel_species = fuel_string.split(',')
                     if len(fuel_species) > 1:
-                        fuel_weights_string:str = input("Insert comma-separated list of fuel species molar fractions: ")
+                        fuel_weights_string:str = processinput("Insert comma-separated list of fuel species molar fractions: ")
                         fuel_weights = [float(w) for w in fuel_weights_string.split(',')]
                     else:
                         fuel_weights = [1.0]
@@ -151,7 +165,6 @@ def ManualFlameletConfiguration():
             except:
                 Config_in.SetFuelDefinition(fuel_definition_default, fuel_weights_default)
                 print("Wrong inputs, please try again.")
-
         print("Fuel definition: " + Config_in.GetFuelString())
         printhbar()
 
@@ -160,11 +173,11 @@ def ManualFlameletConfiguration():
         ox_definition_default = Config_in.GetOxidizerDefinition().copy()
         ox_weights_default = Config_in.GetOxidizerWeights().copy()
         while not correct_oxidizer_definition:
+            oxidizer_string:str = processinput("Insert comma-separated list of oxidizer species (21% O2,79% N2 by default): ") 
             try:
-                oxidizer_string:str = input("Insert comma-separated list of oxidizer species (21% O2,79% N2 by default): ")
                 if not oxidizer_string == "":
                     oxidizer_species = oxidizer_string.split(',')
-                    oxidizer_weights_string:str = input("Insert comma-separated list of oxidizer species molar fractions: ")
+                    oxidizer_weights_string:str = processinput("Insert comma-separated list of oxidizer species molar fractions: ")
                     oxidizer_weights = [float(w) for w in oxidizer_weights_string.split(',')]
 
                     Config_in.SetOxidizerDefinition(oxidizer_species, oxidizer_weights)
@@ -186,13 +199,13 @@ def ManualFlameletConfiguration():
         pv_species_default = Config_in.GetProgressVariableSpecies().copy()
         pv_weights_default = Config_in.GetProgressVariableWeights().copy()
         while not correct_pv_definition:
+            pv_species_input:str = processinput("Insert comma-separated list of progress variable species (%s by default):" % (",".join(s for s in pv_species_default)))
             try:
-                pv_species_input:str = input("Insert comma-separated list of progress variable species (%s by default):" % (",".join(s for s in pv_species_default)))
                 if not pv_species_input == "":
                     pv_species = pv_species_input.split(',')
                 else:
                     pv_species = pv_species_default
-                pv_weights_input:str = input("Insert comma-separated list of progress variable weights (%s by default):" % (",".join(str(s) for s in pv_weights_default)))
+                pv_weights_input:str = processinput("Insert comma-separated list of progress variable weights (%s by default):" % (",".join(str(round(s,4)) for s in pv_weights_default)))
                 if not pv_weights_input == "":
                     pv_weights = [float(w) for w in pv_weights_input.split(',')]
                 else:
@@ -206,8 +219,29 @@ def ManualFlameletConfiguration():
         printhbar()
 
         # 6: Define manifold mixture status range.
-        InsertEnumerateOption(Config_in.DefineMixtureStatus, [False, True], Config_in.GetMixtureStatus(), "Define reactant mixture through mixture fracion")
 
+        correct_input:bool = False 
+        while not correct_input:
+            user_input = processinput("Define reactant mixture through the equivalence ratio (1) or mixture fraction (2) (1 by default): ")
+            try:
+                # Check if user input is valid.
+                if user_input=="1":
+                    Config_in.DefineMixtureStatus(False)
+                    correct_input=True
+                elif user_input=="2":
+                    Config_in.DefineMixtureStatus(True)
+                    correct_input=True
+                elif user_input=="":
+                    Config_in.DefineMixtureStatus()
+                    correct_input=True
+                else:
+                    printwronginput()
+                    correct_input=False
+            except:
+                # Set default value when invalid input.
+                Config_in.DefineMixtureStatus(False)
+                printwronginput()
+          
         if Config_in.GetMixtureStatus():
             print("Reactant mixture status defined as mixture fraction.")
         else:
@@ -218,9 +252,9 @@ def ManualFlameletConfiguration():
         mix_status_lower = Config_in.GetMixtureBounds()[0]
         mix_status_upper = Config_in.GetMixtureBounds()[1]
         while not correct_mixture_bounds:
+            lower_mixture_value_input = processinput("Insert lower reactant mixture status value (%.3f by default): " % mix_status_lower)
+            upper_mixture_value_input = processinput("Insert upper reactant mixture status value (%.3f by default): " % mix_status_upper)
             try:
-                lower_mixture_value_input = input("Insert lower reactant mixture status value (%.3f by default): " % mix_status_lower)
-                upper_mixture_value_input = input("Insert upper reactant mixture status value (%.3f by default): " % mix_status_upper)
                 if not lower_mixture_value_input == "":
                     mix_status_lower = float(lower_mixture_value_input)
                 if not upper_mixture_value_input == "":
@@ -245,9 +279,9 @@ def ManualFlameletConfiguration():
         T_lower = Config_in.GetUnbTempBounds()[0]
         T_upper = Config_in.GetUnbTempBounds()[1]
         while not correct_temperature_bounds:
+            lower_T_value_input = processinput("Insert lower reactant temperature value [K] (%.3f by default): " % T_lower)
+            upper_T_value_input = processinput("Insert upper reactant temperature value [K] (%.3f by default): " % T_upper)
             try:
-                lower_T_value_input = input("Insert lower reactant temperature value [K] (%.3f by default): " % T_lower)
-                upper_T_value_input = input("Insert upper reactant temperature value [K] (%.3f by default): " % T_upper)
                 if not lower_T_value_input == "":
                     T_lower = float(lower_T_value_input)
                 if not lower_T_value_input == "":
@@ -316,12 +350,12 @@ def ManualNICFDConfiguration():
         fluid_weights_default = Config_in.GetMoleFractions()
         printhbar()
         while not correct_fluid_definition:
+            fluid_string:str = processinput("Insert comma-separated list of fluid components (%s by default): " % (",".join(s for s in fluid_definition_default)))
             try:
-                fluid_string:str = input("Insert comma-separated list of fluid components (%s by default): " % (",".join(s for s in fluid_definition_default)))
                 if not fluid_string == "":
                     fluid_species = fluid_string.split(',')
                     if len(fluid_species) > 1:
-                        fluid_weights_string:str = input("Insert comma-separated list of fluid molar fractions: ")
+                        fluid_weights_string:str = processinput("Insert comma-separated list of fluid molar fractions: ")
                         molar_weights = [float(w) for w in fluid_weights_string.split(',')]
                     else:
                         molar_weights = [1.0]
@@ -384,9 +418,9 @@ def ManualNICFDConfiguration():
         x_lower, x_upper = x_bounds[0], x_bounds[1]
         y_lower, y_upper = y_bounds[0], y_bounds[1]
         while not correct_x_bounds:
+            lower_x_input = processinput("Insert lower %s value (%s, %.3e by default): " % (x_string, x_unit, x_lower))
+            upper_x_input = processinput("Insert upper %s value (%s, %.3e by default): " % (x_string, x_unit, x_upper))
             try:
-                lower_x_input = input("Insert lower %s value (%s, %.3e by default): " % (x_string, x_unit, x_lower))
-                upper_x_input = input("Insert upper %s value (%s, %.3e by default): " % (x_string, x_unit, x_upper))
                 if not lower_x_input == "":
                     x_lower = float(lower_x_input)
                 if not upper_x_input == "":
@@ -406,9 +440,9 @@ def ManualNICFDConfiguration():
         printhbar()
 
         while not correct_y_bounds:
+            lower_y_input = processinput("Insert lower %s value (%s, %.3e by default): " % (y_string, y_unit, y_lower))
+            upper_y_input = processinput("Insert upper %s value (%s, %.3e by default): " % (y_string, y_unit, y_upper))  
             try:
-                lower_y_input = input("Insert lower %s value (%s, %.3e by default): " % (y_string, y_unit, y_lower))
-                upper_y_input = input("Insert upper %s value (%s, %.3e by default): " % (y_string, y_unit, y_upper))
                 if not lower_y_input == "":
                     y_lower = float(lower_y_input)
                 if not upper_y_input == "":

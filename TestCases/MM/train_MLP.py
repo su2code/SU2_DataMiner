@@ -19,22 +19,22 @@
 # Description:                                                                                |
 #  Train a multi-layer perceptron for evaluation of thermodynamic properties through physics- |
 #  informed learning to be used for SU2 simulations.                                          |                                                             
-# Version: 1.0.0                                                                              |
+# Version: 2.0.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
 # Import EntropicAI configuration and MLP training module.
-from Manifold_Generation.MLP.Trainers_NICFD.Trainers import EvaluateArchitecture_NICFD
-from Common.DataDrivenConfig import EntropicAIConfig 
+from su2dataminer.manifold import TrainMLP_NICFD
+from su2dataminer.config import Config_NICFD
 
 # Load test case configuration.
-Config = EntropicAIConfig("MM_test.cfg")
+Config = Config_NICFD("MM_test.cfg")
 
 # Define MLP trainer class. This class first trains the MLP to predict the entropy based on 
 # density and internal energy. Subsequently, it initiates a physics-informed training approach
 # where the MLP is trained to predict the temperature, pressure, and speed of sound based on
 # the entropic equation of state.
-Eval = EvaluateArchitecture_NICFD(Config)
+Eval = TrainMLP_NICFD(Config)
 
 # Set activation function. For the physics-informed approach, the "exponential" function is 
 # recommended as it saves computational resourses during SU2 simulations.
