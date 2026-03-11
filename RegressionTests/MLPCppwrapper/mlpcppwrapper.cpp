@@ -49,7 +49,7 @@ std::vector<std::vector<double>> MLPCppEvaluator::EvaluateMLP(std::vector<std::v
     iomap = new MLPToolbox::CIOMap(query_vars_in, query_vars_out);
     lookup_mlp->PairVariableswithMLPs(*iomap);
     for (size_t iq=0; iq<network_inputs.size(); iq++){
-        lookup_mlp->PredictANN(iomap, network_inputs[iq],query_refs_out);
+        lookup_mlp->Predict(*iomap, network_inputs[iq],query_refs_out);
         std::copy(query_out.begin(), query_out.end(), mlp_output[iq].begin());
     }
     delete iomap;
