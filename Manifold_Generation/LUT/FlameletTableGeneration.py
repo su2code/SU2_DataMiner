@@ -829,7 +829,6 @@ class SU2TableGenerator:
         gmsh.model.mesh.generate(2)
         nodes = gmsh.model.mesh.getNodes(dim=2, tag=-1, includeBoundary=True, returnParametricCoord=False)[1]
         MeshPoints = np.array([nodes[::3], nodes[1::3]]).T
-        gmsh.finalize()
 
         # Remove mesh nodes that are out of bounds.
         pv_norm, enth_norm = MeshPoints[:, 0], MeshPoints[:, 1]
