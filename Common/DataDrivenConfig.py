@@ -1654,9 +1654,9 @@ class Config_FGM(Config):
         self.gas.set_equivalence_ratio(equivalence_ratio, self.__fuel_string, self.__oxidizer_string)
         self.gas.TP = temperature, DefaultSettings_FGM.pressure
 
-        pv_unb = 0
+        pv_unb = 0.0
         for iPV, pvSp in enumerate(self.__pv_definition):
-            pv_unb += self.__pv_weights[iPV] * self.gas.Y[self.gas.species_index(pvSp)]
+            pv_unb += float(self.__pv_weights[iPV] * self.gas.Y[self.gas.species_index(pvSp)])
         
         enth_unb = self.gas.enthalpy_mass
 
