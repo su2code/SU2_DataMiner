@@ -41,6 +41,7 @@ F.CollectBoundaryData()
 
 T = TrainMLP_FGM(config, 0)
 T.EnableBCLoss(False)
+T.SetTrainHardware("CPU")
 consistent_hp_params = (config.GetAlphaExpo(0)==T.alpha_expo==alpha_expo) and \
                  (config.GetLRDecay(0)==T.lr_decay==lr_decay) and \
                  (config.GetActivationFunction(0)==T.activation_function==activation_function) and \
