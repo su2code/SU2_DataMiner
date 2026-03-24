@@ -67,6 +67,8 @@ class EntropicVars(Enum):
     cp=auto()
     N_STATE_VARS=auto()
 
+# TODO: include transport properties in entropic vars 
+
 class FGMVars(Enum):
     ProgressVariable=0
     EnthalpyTot=auto()
@@ -137,6 +139,11 @@ class DefaultSettings_NICFD(DefaultProperties):
     
     fluid_name:str = "Air"
     EOS_type:str = "HEOS"
+    #TODO: include conductivity model options
+    #TODO: include viscosity model options
+    conductivity_model:str = "volume"
+    viscosity_model:str = "mcadams"
+
     use_PT_grid:bool = False 
 
     controlling_variables:list[str] = [EntropicVars.Density.name, \

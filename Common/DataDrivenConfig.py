@@ -57,6 +57,13 @@ class Config_NICFD(Config):
     # Fluid definition settings
     __fluid_names:list[str] = ["MM"]                    # List of fluid names used for data generation.
     __fluid_string:str="MM"                             # Fluid string for defining the abstract state in CoolProp
+    # TODO: include options for transport properties 
+    __calc_transport_properties:bool = False
+    __viscosity_model:str = DefaultSettings_NICFD.viscosity_model
+    __conductivity_model:str = DefaultSettings_NICFD.conductivity_model
+    
+    __twophase:bool = False 
+
     __EOS_type:str=DefaultSettings_NICFD.EOS_type       # Equation of state used by CoolProp
     __fluid_mole_fractions:list[float] = [1.0]          # Mole fractions for components in fluid mixture.
     __use_PT:bool = DefaultSettings_NICFD.use_PT_grid   # Use a pressure-temperature based grid for fluid training data.
@@ -151,6 +158,9 @@ class Config_NICFD(Config):
                 print("Density range: %.2f kg/m3 -> %.2f kg/m3 (%i steps)" % (self.__Rho_lower, self.__Rho_upper, self.__Np_P))
         print("")
         print("State variables considered during physics-informed learning: "+", ".join((v for v in self._state_vars)))
+
+        # TODO: display transport model information
+
         return 
     
 
@@ -207,6 +217,29 @@ class Config_NICFD(Config):
         
         self.__EOS_type=EOS_type_in.upper()
         return
+    
+    def IncludeTransportProperties(self, calc_transport_properties:bool=False):
+        """Include transport properties in fluid data calculation
+
+        :param calc_transport_properties: evaluate transport properties, defaults to False
+        :type calc_transport_properties: bool, optional
+        """
+        self.__calc_transport_properties = calc_transport_properties
+        return 
+    
+    # TODO: Setter/getter functions for transport models 
+
+    def EnableTwophase(self, two_phase:bool=False):
+        """Include two-phase region in fluid data.
+
+        :param two_phase: include two-phase data in fluid data, defaults to False
+        :type two_phase: bool, optional
+        """
+        self.__twophase = two_phase 
+        return 
+    
+    def TwoPhase(self):
+        return self.__twophase
     
     def GetEquationOfState(self):
         """Retrieve the equation of state backend used by CoolProp for fluid data calculations.

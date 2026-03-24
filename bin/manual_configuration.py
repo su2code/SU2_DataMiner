@@ -383,6 +383,8 @@ def ManualNICFDConfiguration():
         print("Fluid data grid definition: %s based." % grid_string)
         printhbar()
 
+        # TODO: include transport property setters/getters
+        
         # 3: Define fluid data manifold bounds.
         correct_x_bounds=False 
         correct_y_bounds=False

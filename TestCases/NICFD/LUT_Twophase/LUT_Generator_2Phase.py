@@ -19,7 +19,7 @@ class TwoPhase_LUT_Generator:
     Generate structured Look-Up Tables for two-phase thermodynamic properties.
     Uses density-energy as controlling variables.
     """
-
+    # TODO: initiate from SU2 DataMiner configuation
     def __init__(self, fluid_name="MM", EoS="HEOS", include_diagnostics=False,
                  viscosity_mixing_model="mcadams", conductivity_mixing_model="volume"):
         """
@@ -44,12 +44,14 @@ class TwoPhase_LUT_Generator:
             - "volume" (default): Volume-weighted
             - "mass": Mass-weighted
         """
+
+        # TODO: retrieve fluid name, equation of state, transport variables from configuration.
         self.fluid_name = fluid_name
         self.EoS = EoS
         self.fluid = CP.AbstractState(EoS, fluid_name)
         self.include_diagnostics = include_diagnostics
 
-        # Controlling variables
+        # Controlling variables TODO: retrieve from config
         self.controlling_vars = ["Density", "Energy"]
 
         # Table variables plus transport properties for viscous simulations
@@ -57,10 +59,12 @@ class TwoPhase_LUT_Generator:
                            "d2sdrho2", "d2sdedrho", "d2sde2",
                            "ViscosityDyn", "Conductivity"]
         
+        # TODO: Retrieve from EntropicVars
         # Optional diagnostic variables (not read by SU2 solver)
         self.diagnostic_vars = ["T", "p", "VaporQuality"]
         
         # Two-phase mixing model options
+        # TODO: include in data generator
         self.viscosity_mixing_model = viscosity_mixing_model
         self.conductivity_mixing_model = conductivity_mixing_model
 
@@ -82,6 +86,7 @@ class TwoPhase_LUT_Generator:
             print(f"Diagnostic Variables (non-standard): {self.diagnostic_vars}")
         print("=" * 80 + "\n")
 
+    # TODO: Include in data generator
     def _get_entropy_safe(self, rho, e):
         """
         Safely get entropy at (rho, e), returning None if evaluation fails.
@@ -95,6 +100,7 @@ class TwoPhase_LUT_Generator:
         except:
             return None
 
+    # TODO: Include in data generator
     def _compute_derivatives_fd(self, rho, e, s_center):
         """
         Compute all entropy derivatives using central finite differences.
@@ -148,7 +154,7 @@ class TwoPhase_LUT_Generator:
             'd2sde2': d2sde2,
             'd2sdedrho': d2sdedrho
         }
-
+    # TODO: Include in data generator
     def _compute_derivatives_fd_onesided(self, rho, e, s_center, drho, de):
         """
         Fallback: compute derivatives using one-sided finite differences.
@@ -193,6 +199,7 @@ class TwoPhase_LUT_Generator:
         
         return derivs
 
+    # TODO: Include in data generator
     def _get_saturated_transport_properties(self, p, T):
         """
         Get transport properties at saturation conditions for both liquid and vapor phases.
@@ -233,6 +240,7 @@ class TwoPhase_LUT_Generator:
         except Exception as ex:
             return None
 
+    # TODO: Include in data generator
     def _compute_void_fraction(self, quality, rho_l, rho_g):
         """
         Compute void fraction (a) from quality (x) using the homogeneous model.
@@ -261,6 +269,7 @@ class TwoPhase_LUT_Generator:
             # Homogeneous model void fraction
             return 1.0 / (1.0 + (1.0 - quality) / quality * rho_g / rho_l)
 
+    # TODO: Include in data generator
     def _compute_twophase_viscosity(self, quality, mu_l, mu_g, rho_l=None, rho_g=None, alpha=None):
         """
         Compute two-phase mixture viscosity using selected mixing model.
@@ -356,6 +365,7 @@ class TwoPhase_LUT_Generator:
             if alpha is None:
                 return x * k_g + (1.0 - x) * k_l
             return alpha * k_g + (1.0 - alpha) * k_l
+    
 
     def SetDensityEnergyGrid(self, rho_min, rho_max, e_min, e_max,
                              N_rho=100, N_e=100):
@@ -743,6 +753,7 @@ class TwoPhase_LUT_Generator:
         print(f"  Variables: {all_vars}")
         print()
 
+    # TODO: interactive visualization
     def VisualizeTables(self, save_dir="./"):
         """
         Create visualization plots of the table data.

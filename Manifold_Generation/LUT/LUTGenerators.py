@@ -47,21 +47,12 @@ class SU2TableGenerator_NICFD:
     _DataGenerator:DataGenerator_CoolProp = None 
     _savedir:str
 
-    _Fluid_Variables:list[str] = None  # Variable names in the concatenated flamelet data file.
-
-    _custom_table_limits_set:bool = False 
-    _mixfrac_min_table:float = None     # Lower mixture fraction limit of the table.
-    _mixfrac_max_table:float = None     # Upper mixture fraction limit of the table.
-
-    refinement_vars = []
-    refinement_norm_min = []
-    refinement_norm_max = []
-
     _base_cell_size:float = 2e-2      # Table level base cell size.
 
     _refined_cell_size:float = 5e-3#2.5e-3#1.5e-3   # Table level refined cell size.
     _refinement_radius:float = 1e-2#5e-2     # Table level radius within which refinement is applied.
 
+    _table_vars:list[str] = [s.name for s in EntropicVars][:-1]
     _table_nodes = []       # Progress variable, total enthalpy, and mixture fraction node values for each table level.
     _table_nodes_norm = []  # Normalized table nodes for each level.
     _table_connectivity = []    # Table node connectivity per table level.
@@ -71,6 +62,8 @@ class SU2TableGenerator_NICFD:
                                       "Energy"]  # FGM controlling variables
     _fluid_data_scaler:MinMaxScaler = None   # Scaler for flamelet data controlling variables.
 
+    # TODO: option for adaptive mesh/Cartesian mesh 
+
     def __init__(self, Config:Config_NICFD, load_file:str=None):
         """
         Initiate table generator class.
@@ -79,10 +72,14 @@ class SU2TableGenerator_NICFD:
         :type Config: Config_FGM
         """
         self._Config = Config 
+        self._controlling_variables= [c for c in self._Config.GetControllingVariables()]
+
         self._DataGenerator = DataGenerator_CoolProp(self._Config)
         self.__LoadFluidData()
         return 
     
+    # TODO: setters for Cartesian table options 
+
     def SetCellSize_Coarse(self, cell_size_coarse:float=1e-2):
         """Specify the coarse level cell size of the table
 
@@ -120,6 +117,7 @@ class SU2TableGenerator_NICFD:
         return 
     
     def __LoadFluidData(self):
+        # TODO: generate coarse data grid from data generator
         fluid_data_file = self._Config.GetOutputDir() + "/" + self._Config.GetConcatenationFileHeader() + "_full.csv"
         with open(fluid_data_file, 'r') as fid:
             vars = fid.readline().strip().split(',')
@@ -136,6 +134,7 @@ class SU2TableGenerator_NICFD:
         return fluid_data_norm
         
     def __Compute2DMesh(self, points:np.ndarray[float], ref_pts:np.ndarray[float]=[],show:bool=False):
+        
         
         # Create concave hull of normalized table coordinates.
         XY_hull = concave_hull(np.unique(points,axis=0), length_threshold=1e-1)
@@ -231,11 +230,15 @@ class SU2TableGenerator_NICFD:
         fluid_data_out = fluid_data_out[~np.isnan(fluid_data_out[:,0]),:]
         return fluid_data_out
     
+    # TODO: include derivative and transport validation methods
+
     def GenerateTable(self):
         """Initiate table generation process
         """
 
         # Load initial fluid data and scale it
+        # TODO: use adaptive refinement or Cartesian refinement based on settings.
+
         fluid_data_norm = self.__LoadFluidData()
         rhoe_norm = fluid_data_norm[:, [EntropicVars.Density.value, EntropicVars.Energy.value]]
 
@@ -386,3 +389,5 @@ class SU2TableGenerator_NICFD:
         fid.close()
 
         return
+    
+    # TODO: update configuration function
