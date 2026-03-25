@@ -233,6 +233,9 @@ class Config_NICFD(Config):
         self.__calc_transport_properties = calc_transport_properties
         return 
     
+    def CalcTransportProperties(self):
+        return self.__calc_transport_properties 
+    
     def SetConductivityModel(self, conductivity_model:str=DefaultSettings_NICFD.conductivity_model):
         """Specify the two-phase conductivity model.
 
