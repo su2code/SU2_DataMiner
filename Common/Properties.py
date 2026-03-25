@@ -139,8 +139,8 @@ class DefaultSettings_NICFD(DefaultProperties):
     
     fluid_name:str = "Air"
     EOS_type:str = "HEOS"
-    #TODO: include conductivity model options
-    #TODO: include viscosity model options
+    conductivity_models:list[str] = ["volume", "mass"]
+    viscosity_models:list[str] = ["mcadams", "cicchitti", "dukler"]
     conductivity_model:str = "volume"
     viscosity_model:str = "mcadams"
 
@@ -221,3 +221,4 @@ ActivationFunctionOptions = {"linear" : tf.keras.activations.linear,\
                              "gelu" : tf.keras.activations.gelu,\
                              "sigmoid" : tf.keras.activations.sigmoid,\
                              "swish" : tf.keras.activations.swish}
+

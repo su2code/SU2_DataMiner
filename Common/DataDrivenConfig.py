@@ -227,8 +227,46 @@ class Config_NICFD(Config):
         self.__calc_transport_properties = calc_transport_properties
         return 
     
-    # TODO: Setter/getter functions for transport models 
+    def SetConductivityModel(self, conductivity_model:str=DefaultSettings_NICFD.conductivity_model):
+        """Specify the two-phase conductivity model.
 
+        :param conductivity_model: two-phase conductivity model option, defaults to "volume"
+        :type conductivity_model: str, optional
+        :raises Exception: if the specified option is not supported.
+        """
+        if conductivity_model not in DefaultSettings_NICFD.conductivity_models:
+            raise Exception("Two-phase conductivity model should be one of the following: " + ",".join(c for c in DefaultSettings_NICFD.conductivity_models))
+        self.__conductivity_model = conductivity_model
+        return 
+    
+    def GetConductivityModel(self):
+        """Get two-phase conductivity model.
+
+        :return: two-phase conductivity model option
+        :rtype: str
+        """
+        return self.__conductivity_model
+    
+    def SetViscosityModel(self, viscosity_model:str=DefaultSettings_NICFD.viscosity_model):
+        """Specify the two-phase viscosity model.
+
+        :param viscosity_model: two-phase viscosity model option, defaults to "mcadams"
+        :type viscosity_model: str, optional
+        :raises Exception: if the specified option is not supported.
+        """
+        if viscosity_model not in DefaultSettings_NICFD.viscosity_models:
+            raise Exception("Two-phase viscosity model should be one of the following: " + ",".join(c for c in DefaultSettings_NICFD.viscosity_models))
+        self.__viscosity_model = viscosity_model
+        return 
+    
+    def GetViscosityModel(self):
+        """Get two-phase viscosity model.
+
+        :return: two-phase viscosity model option
+        :rtype: str
+        """
+        return self.__viscosity_model
+    
     def EnableTwophase(self, two_phase:bool=False):
         """Include two-phase region in fluid data.
 
