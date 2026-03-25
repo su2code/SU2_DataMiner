@@ -85,7 +85,7 @@ class Config_NICFD(Config):
     _state_vars:list[str] = ["s", "T","p","c2"]  # State variable names for which the physics-informed MLP is trained.
 
     # Table Generation Settings
-
+    __Table_discretization:str = DefaultSettings_NICFD.tabulation_method
     __Table_base_cell_size:float = None     # Table base cell size per table level.
     __Table_ref_cell_size:float = None      # Refined cell size per table level.
     __Table_ref_radius:float = None         # Refinement radius within which refined cell size is applied.
@@ -159,7 +159,13 @@ class Config_NICFD(Config):
         print("")
         print("State variables considered during physics-informed learning: "+", ".join((v for v in self._state_vars)))
 
-        # TODO: display transport model information
+        if self.__twophase:
+            print("Including two-phase fluid data.")
+        if self.__calc_transport_properties:
+            print("Including transport properties in fluid data.")
+            if self.__twophase:
+                print("Two-phase conductivity model: %s" % self.__conductivity_model)
+                print("Two-phase viscosity model: %s" % self.__viscosity_model)
 
         return 
     
@@ -559,6 +565,26 @@ class Config_NICFD(Config):
 
         """
         return self.__Np_P
+    
+    def SetTableDiscretization(self, table_method:str=DefaultSettings_NICFD.tabulation_method):
+        """Specify how thermodynamic state space is discretized for look-up table.
+
+        :param table_method: discretization method, defaults to "cartesian"
+        :type table_method: str, optional
+        :raises Exception: if method is not supported
+        """
+        if table_method not in DefaultSettings_NICFD.tabulation_options:
+            raise Exception("Table discretization method should be one of the following: %s" % ",".join(t for t in DefaultSettings_NICFD.tabulation_options))
+        self.__Table_discretization = table_method
+        return 
+    
+    def GetTableDiscretization(self):
+        """Get thermodynamic state space discretization method.
+
+        :return: table discretization method.
+        :rtype: str
+        """
+        return self.__Table_discretization
     
     def SetTableCellSize(self, base_cell_size:float, refined_cell_size:float=None):
         """Define the base and optional refined 2D table cell sizes.
