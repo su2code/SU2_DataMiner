@@ -246,6 +246,9 @@ class Config_NICFD(Config):
         if conductivity_model not in DefaultSettings_NICFD.conductivity_models:
             raise Exception("Two-phase conductivity model should be one of the following: " + ",".join(c for c in DefaultSettings_NICFD.conductivity_models))
         self.__conductivity_model = conductivity_model
+        if not self.TwoPhase():
+            self.EnableTwophase(True)
+            print("Two-phase conductivity model specified, including two-phase fluid data.")
         return 
     
     def GetConductivityModel(self):
@@ -266,6 +269,9 @@ class Config_NICFD(Config):
         if viscosity_model not in DefaultSettings_NICFD.viscosity_models:
             raise Exception("Two-phase viscosity model should be one of the following: " + ",".join(c for c in DefaultSettings_NICFD.viscosity_models))
         self.__viscosity_model = viscosity_model
+        if not self.TwoPhase():
+            self.EnableTwophase(True)
+            print("Two-phase viscosity model specified, including two-phase fluid data.")
         return 
     
     def GetViscosityModel(self):
