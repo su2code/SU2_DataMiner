@@ -65,6 +65,10 @@ class EntropicVars(Enum):
     dsdp_rho=auto()
     dsdrho_p=auto()
     cp=auto()
+    Enthalpy=auto()
+    Conductivity=auto()
+    ViscosityDyn=auto()
+    VaporQuality=auto()
     N_STATE_VARS=auto()
 
 # TODO: include transport properties in entropic vars 
