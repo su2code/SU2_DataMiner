@@ -401,7 +401,6 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         
         self.__StateVars_fluid = np.zeros([self.__Np_X, self.__Np_Y, EntropicVars.N_STATE_VARS.value])
         self.__success_locations = np.ones([self.__Np_X, self.__Np_Y],dtype=bool)
-        
         # Loop over density-based or pressure-based grid.
         for i in tqdm(range(self.__Np_X)):
             for j in range(self.__Np_Y):
@@ -418,7 +417,6 @@ class DataGenerator_CoolProp(DataGenerator_Base):
                 except:
                     self.__success_locations[i,j] = False 
                     self.__StateVars_fluid[i, j, :] = None
-
         return 
     
     def __TransportProperties(self, q:float):
@@ -540,13 +538,16 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         state_vector_struct[EntropicVars.cp.name] = Cp
 
         dhdrho_P = dhdrho_e - dhde_rho * (1 / dPde_rho) * dPdrho_e
-        state_vector_struct[EntropicVars.dhdrho_p] = dhdrho_P
+        state_vector_struct[EntropicVars.dhdrho_p.name] = dhdrho_P
         dhdP_rho = dhde_rho * (1 / dPde_rho)
-        state_vector_struct[EntropicVars.dhdp_rho] = dhdP_rho
+        state_vector_struct[EntropicVars.dhdp_rho.name] = dhdP_rho
         dsdrho_P = dsdrho_e - dPdrho_e * (1 / dPde_rho) * dsde_rho
-        state_vector_struct[EntropicVars.dsdrho_p] = dsdrho_P
+        state_vector_struct[EntropicVars.dsdrho_p.name] = dsdrho_P
         dsdP_rho = dsde_rho / dPde_rho
-        state_vector_struct[EntropicVars.dsdp_rho] = dsdP_rho
+        state_vector_struct[EntropicVars.dsdp_rho.name] = dsdP_rho
+
+        state_vector_struct[EntropicVars.dhde_rho.name] = self.fluid.first_partial_deriv(CP.iHmass, CP.iUmass, CP.iDmass)
+        state_vector_struct[EntropicVars.dhdrho_e.name] = self.fluid.first_partial_deriv(CP.iHmass, CP.iDmass, CP.iUmass)
         return 
         
     def __ThermodynamicState(self):
