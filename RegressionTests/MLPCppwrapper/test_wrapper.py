@@ -86,7 +86,7 @@ for k in range(20):
     a.SetQueryOutputs(query_vars)
     a.GenerateMLP()
     output_mlpcpp = np.array(a.EvaluateMLP(CV_flamelet_test))
-
+    print(output_TensorFlow[0,:], output_mlpcpp[0,:])
     diff_TF_MLPCpp = calc_error(output_TensorFlow, output_mlpcpp)
     if diff_TF_MLPCpp > 1e-12:
         passed = False 
