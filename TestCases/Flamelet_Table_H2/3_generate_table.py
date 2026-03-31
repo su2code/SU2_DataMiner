@@ -1,14 +1,15 @@
 from Manifold_Generation.LUT.FlameletTableGeneration import SU2TableGenerator
-from Common.DataDrivenConfig import FlameletAIConfig 
+from Common.DataDrivenConfig import Config_FGM 
 
 # Loading configuration.
-Config = FlameletAIConfig("TableGeneration.cfg")
+Config = Config_FGM("TableGeneration.cfg")
 
 # Initializing table module and pre-process interpolator.
 Tgen = SU2TableGenerator(Config, n_near=14, p_fac=3)
 
-# Manually set mixture fraction limits.
-Tgen.SetMixtureFractionLimits(mix_frac_max=0.0144703624619207, mix_frac_min=0.00939225575395504)
+# Manually set mixture fraction limits. 
+# 0.00825 - 0.02 is phi=[0.3..0.7] so works for phi=0.5 with small amounts of pref. diff.
+Tgen.SetMixtureFractionLimits(mix_frac_max=0.020, mix_frac_min=0.00825)
 Tgen.SetNTableLevels(20)
 
 # Visualize the interpolated reaction rate at equivalence ratio 0.5.
