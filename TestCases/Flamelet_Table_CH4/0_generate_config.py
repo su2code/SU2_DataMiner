@@ -8,9 +8,9 @@ Config.SetConfigName("TableGeneration")
 Config.SetFuelDefinition(fuel_species=["CH4"],fuel_weights=[1.0])
 Config.SetReactionMechanism('gri30.yaml')
 Config.SetMixtureBounds(0.74, 0.76)
-Config.SetNpMix(6)
-Config.SetUnbTempBounds(260, 760)
-Config.SetNpTemp(51)
+Config.SetNpMix(5)
+Config.SetUnbTempBounds(275, 350)
+Config.SetNpTemp(4)
 
 # Enable preferential diffusion through selecting the "multicomponent" transport model.
 #Config.SetTransportModel('multicomponent')
