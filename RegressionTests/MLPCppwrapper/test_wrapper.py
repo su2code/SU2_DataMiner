@@ -83,7 +83,7 @@ for k in range(20):
     T.write_SU2_MLP(MLP_file_header)
     output_TensorFlow = T.EvaluateMLP(CV_flamelet_test)
     print("TF:")
-    print(output_TensorFlow)
+    print(output_TensorFlow[0,:])
     a = MLPCppEvaluator()
     a.AddMLP("%s.mlp" % MLP_file_header)
     a.SetQueryInputs(controlling_vars)
@@ -91,7 +91,7 @@ for k in range(20):
     a.GenerateMLP()
     output_mlpcpp = np.array(a.EvaluateMLP(CV_flamelet_test))
     print("MLPCpp:")
-    print(output_mlpcpp)
+    print(output_mlpcpp[0,:])
     diff_TF_MLPCpp = calc_error(output_TensorFlow, output_mlpcpp)
     if diff_TF_MLPCpp > 1e-12:
         passed = False 
