@@ -8,6 +8,8 @@ from su2dataminer.generate_data import ComputeFlameletData,ComputeBoundaryData
 from su2dataminer.process_data import FlameletConcatenator
 from mlpcppwrapper import MLPCppEvaluator 
 
+np.random.seed(1)
+
 config = Config_FGM()
 config.SetFuelDefinition(["H2"], [1.0])
 config.SetReactionMechanism("h2o2.yaml")
@@ -80,13 +82,16 @@ for k in range(20):
     MLP_file_header = "MLP_test"
     T.write_SU2_MLP(MLP_file_header)
     output_TensorFlow = T.EvaluateMLP(CV_flamelet_test)
+    print("TF:")
+    print(output_TensorFlow)
     a = MLPCppEvaluator()
     a.AddMLP("%s.mlp" % MLP_file_header)
     a.SetQueryInputs(controlling_vars)
     a.SetQueryOutputs(query_vars)
     a.GenerateMLP()
     output_mlpcpp = np.array(a.EvaluateMLP(CV_flamelet_test))
-
+    print("MLPCpp:")
+    print(output_mlpcpp)
     diff_TF_MLPCpp = calc_error(output_TensorFlow, output_mlpcpp)
     if diff_TF_MLPCpp > 1e-12:
         passed = False 
