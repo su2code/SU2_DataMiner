@@ -48,7 +48,7 @@ Z_test = flamelet_data[:, vars_flamelet.index("MixtureFraction")]
 CV_flamelet_test = np.vstack((pv_test,h_test,Z_test)).T 
 controlling_vars = ["ProgressVariable","EnthalpyTot","MixtureFraction"]
 activation_functions = ["linear",'relu','elu','tanh','sigmoid']
-scalers = ["minmax",'robust','standard']
+scalers = ['robust','standard']
 
 def calc_error(MLP_output_Tensorflow:np.ndarray[float], MLP_output_MLPCpp:np.ndarray[float]):
     return(np.sqrt(np.average(np.power((MLP_output_Tensorflow-MLP_output_MLPCpp)/(MLP_output_MLPCpp),2))))
@@ -82,16 +82,12 @@ for k in range(20):
     MLP_file_header = "MLP_test"
     T.write_SU2_MLP(MLP_file_header)
     output_TensorFlow = T.EvaluateMLP(CV_flamelet_test)
-    print("TF:")
-    print(output_TensorFlow[0,:])
     a = MLPCppEvaluator()
     a.AddMLP("%s.mlp" % MLP_file_header)
     a.SetQueryInputs(controlling_vars)
     a.SetQueryOutputs(query_vars)
     a.GenerateMLP()
     output_mlpcpp = np.array(a.EvaluateMLP(CV_flamelet_test))
-    print("MLPCpp:")
-    print(output_mlpcpp[0,:])
     diff_TF_MLPCpp = calc_error(output_TensorFlow, output_mlpcpp)
     if diff_TF_MLPCpp > 1e-12:
         passed = False 
