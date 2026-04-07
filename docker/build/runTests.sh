@@ -66,7 +66,7 @@ else
   cd src/SU2_DataMiner
   export SU2DATAMINER_HOME=$PWD
 fi
-
+export TF_ENABLE_ONEDNN_OPTS=0
 
 # Activate python virtual environment and install required modules
 echo "Installing python modules..."
