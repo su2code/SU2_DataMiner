@@ -7,13 +7,20 @@ Config.SetConfigName("TableGeneration")
 # Methane-air flamelets with equivalence ratio 0.75
 Config.SetFuelDefinition(fuel_species=["CH4"],fuel_weights=[1.0])
 Config.SetReactionMechanism('gri30.yaml')
-Config.SetMixtureBounds(0.74, 0.76)
-Config.SetNpMix(5)
-Config.SetUnbTempBounds(275, 350)
-Config.SetNpTemp(4)
+
+Config.SetMixtureBounds(0.55, 0.95)
+Config.SetNpMix(41)
+Config.SetUnbTempBounds(270, 750)
+Config.SetNpTemp(49)
+
+#Config.SetMixtureBounds(0.75, 0.755)
+#Config.SetNpMix(2)
+#Config.SetUnbTempBounds(300, 400)
+#Config.SetNpTemp(6)
 
 # Enable preferential diffusion through selecting the "multicomponent" transport model.
 #Config.SetTransportModel('multicomponent')
+#Config.SetTransportModel('mixture-averaged')
 Config.SetTransportModel('mixture-averaged')
 
 Config.SetConcatenationFileHeader("LUT_data")

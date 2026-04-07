@@ -11,10 +11,20 @@ os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 from Common.DataDrivenConfig import Config_FGM
-from Data_Generation.DataGenerator_FGM import ComputeFlameletData
+from Data_Generation.DataGenerator_FGM import ComputeFlameletData, ComputeBoundaryData
+from Data_Generation.DataGenerator_FGM import DataGenerator_Cantera
 
 # Load FGM configuration
 Config = Config_FGM("TableGeneration.cfg")
+# Distribute flamelet data generation process over N_processor cores.
+ComputeFlameletData(Config, run_parallel=True, N_processors=8, loglevel=0)
 
-# Distribute flamelet data generation process over 20 cores.
-ComputeFlameletData(Config, run_parallel=True, N_processors=4)
+
+#F = DataGenerator_Cantera(Config)
+#F.RunFreeFlames(False)
+#F.RunBurnerFlames(False)
+#F.RunCounterFlowFlames(False)
+#F.RunEquilibrium(True)   # burnt only
+# F.RunEquilibrium(False)  # unburnt only
+#F.ComputeFlamelets()
+#ComputeBoundaryData(Config, run_parallel=True, N_processors=4)

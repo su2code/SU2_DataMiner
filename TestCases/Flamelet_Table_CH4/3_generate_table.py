@@ -9,8 +9,8 @@ Tgen = SU2TableGenerator(Config, n_near=14, p_fac=3)
 
 # Manually set mixture fraction limits.
 # here: phi = [0.5, 1.0] so use between [0.55, 0.95]
-Tgen.SetMixtureFractionLimits(mix_frac_max=0.05518, mix_frac_min=0.02838)
-Tgen.SetNTableLevels(20)
+Tgen.SetMixtureFractionLimits(mix_frac_max=0.0422, mix_frac_min=0.041969)
+Tgen.SetNTableLevels(2)
 
 # Visualize the interpolated reaction rate at equivalence ratio 0.5.
 cv_target = Config.GetUnburntScalars(equivalence_ratio=0.75, temperature=300.0)
@@ -18,6 +18,19 @@ pv_target = cv_target[0]
 z_target = cv_target[2]
 print("Target unburnt progress variable: ", pv_target)
 Tgen.VisualizeTableLevel(z_target, "ProdRateTot_PV")
+
+# Visualize the interpolated reaction rate at equivalence ratio 0.5.
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.75, temperature=300.0)
+pv_target = cv_target[0]
+z_target = cv_target[2]
+print("Target unburnt progress variable: ", pv_target)
+Tgen.VisualizeTableLevel(z_target, "Heat_Release")
+
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.75, temperature=300.0)
+pv_target = cv_target[0]
+z_target = cv_target[2]
+print("Target unburnt progress variable: ", pv_target)
+Tgen.VisualizeTableLevel(z_target, "Temperature")
 
 # Visualize table level connectivity at equivalence ratio 0.5.
 Tgen.VisualizeTableLevel(z_target)
