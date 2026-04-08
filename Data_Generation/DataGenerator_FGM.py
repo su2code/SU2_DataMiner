@@ -31,7 +31,6 @@ import numpy as np
 import csv 
 from os import path, mkdir
 from joblib import Parallel, delayed
-np.random.seed(2)
 
 #---------------------------------------------------------------------------------------------#
 # Importing DataMiner classes and functions
@@ -80,13 +79,13 @@ class DataGenerator_Cantera(DataGenerator_Base):
     __u_oxidizer:float = None   # Oxidizer stream velocity in counter-flow diffusion flame.
 
     def __init__(self, Config:Config_FGM=None):
-        DataGenerator_Base.__init__(self, Config_in=Config)
-
         """Constructur, load flamelet generation settings from Config_FGM.
 
         :param Config: Config_FGM containing respective settings.
         :type Config: Config_FGM
         """
+        DataGenerator_Base.__init__(self, Config_in=Config)
+
 
         if Config is None:
             print("Initializing flamelet generator with default settings")
@@ -132,8 +131,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
         :param fuel_species: list of fuel species names.
         :type fuel_species: list[str]
-        :param __fuel_weights: list of fuel molar fraction weights.
-        :type __fuel_weights: list[float]
+        :param fuel_weights: list of fuel molar fraction weights.
+        :type fuel_weights: list[float]
         :raises Exception: if no fuel species are provided.
         :raises Exception: if the number of species does not correspond to the number of weights.
         """
@@ -147,8 +146,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
         :param oxidizer_species: list of oxidizer species names.
         :type oxidizer_species: list[str]
-        :param __oxidizer_weights: list of oxidizer molar fraction weights.
-        :type __oxidizer_weights: list[float]
+        :param oxidizer_weights: list of oxidizer molar fraction weights.
+        :type oxidizer_weights: list[float]
         :raises Exception: if no oxidizer species are provided.
         :raises Exception: if the number of species does not correspond to the number of weights.
         """
@@ -253,20 +252,22 @@ class DataGenerator_Cantera(DataGenerator_Base):
     def SetReactionMechanism(self, reaction_mechanism:str):
         """Define the reaction mechanism manually.
 
-        :param __reaction_mechanism: name of the reaction mechanism.
-        :type __reaction_mechanism: str
+        :param reaction_mechanism: name of the reaction mechanism.
+        :type reaction_mechanism: str
         """
         self._Config.SetReactionMechanism(reaction_mechanism)
         self.__SynchronizeSettings()
         return 
     
     def SetTransportModel(self, transport_model:str):
+        """Overwrite the transport mechanism from the loaded configuration.
+
+        :param transport_model: Cantera transport model.
+        :type transport_model: str
+        """
+
         self._Config.SetTransportModel(transport_model)
         self.__SynchronizeSettings()
-        return 
-    
-    def SetTransportMechanism(self, transport_mechanism:str="multicomponent"):
-        self.__transport_model = transport_mechanism 
         return 
     
     def TranslateToMatlab(self):

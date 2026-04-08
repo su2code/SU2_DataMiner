@@ -50,7 +50,7 @@ if [ ! -z "$branch" ]; then
     mkdir "src"
   fi
   cd "src"
-  git clone --recursive https://github.com/EvertBunschoten/SU2_DataMiner $name
+  git clone --recursive https://github.com/su2code/SU2_DataMiner.git $name
   cd $name
   git config --add remote.origin.fetch '+refs/pull/*/merge:refs/remotes/origin/refs/pull/*/merge'
   git config --add remote.origin.fetch '+refs/heads/*:refs/remotes/origin/refs/heads/*'
@@ -66,7 +66,7 @@ else
   cd src/SU2_DataMiner
   export SU2DATAMINER_HOME=$PWD
 fi
-
+export TF_ENABLE_ONEDNN_OPTS=0
 
 # Activate python virtual environment and install required modules
 echo "Installing python modules..."

@@ -18,7 +18,7 @@ release = '2.0.0'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = ['sphinx.ext.autodoc']
-
+html_logo="../images/SU2DataMiner_logo.png"
 templates_path = ['_templates']
 exclude_patterns = []
 
@@ -29,4 +29,5 @@ numpydoc_show_class_members = False
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'pydata_sphinx_theme'
+html_theme_options={"show_nav_level": 3}
 html_static_path = ['_static']

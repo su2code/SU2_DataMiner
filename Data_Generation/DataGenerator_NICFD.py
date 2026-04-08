@@ -75,6 +75,11 @@ class DataGenerator_CoolProp(DataGenerator_Base):
     __mixture:bool = False 
 
     def __init__(self, Config_in:Config_NICFD=None):
+        """Constructor, load settings from SU2 DataMiner configuration.
+
+        :param Config_in: SU2 DataMiner configuration class, defaults to None
+        :type Config_in: Config_NICFD, optional
+        """
         DataGenerator_Base.__init__(self, Config_in=Config_in)
 
         if Config_in is None:
@@ -171,6 +176,8 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         return 
     
     def UpdateConfig(self):
+        """Update the bounds of the thermodynamic state data stored in the configuration class.
+        """
         if self.__use_PT:
             self._Config.SetPressureBounds(self.__P_min, self.__P_max)
             self._Config.SetTemperatureBounds(self.__T_min, self.__T_max)
@@ -343,51 +350,7 @@ class DataGenerator_CoolProp(DataGenerator_Base):
                 except:
                     self.__success_locations[i,j] = False 
                     self.__StateVars_fluid[i, j, :] = None
-        
-        # self.__AddIdealGasData()
 
-        return 
-    
-    def __AddIdealGasData(self):
-        state_flattened = np.vstack(self.__StateVars_fluid)[self.__success_locations.flatten(), :]
-        rho_data = state_flattened[:, EntropicVars.Density.value]
-        e_data = state_flattened[:, EntropicVars.Energy.value]
-        p_data = state_flattened[:, EntropicVars.p.value]
-        T_data = state_flattened[:, EntropicVars.T.value]
-        
-
-
-        R_gas = self.fluid.gas_constant()/self.fluid.molar_mass()
-        compressibility_factor = p_data / (R_gas * rho_data * T_data)
-        idealgas_loc = compressibility_factor > 0.9
-
-        rho_min, rho_max = min(rho_data), max(rho_data)
-        e_min, e_max = min(e_data), max(e_data)
-        
-        Np = 10
-
-        rho_idealgas = rho_data[idealgas_loc]
-        e_idealgas = e_data[idealgas_loc]
-
-        self.__StateVars_additional = np.zeros([len(rho_idealgas), EntropicVars.N_STATE_VARS.value])
-        success_locations = np.ones(len(rho_idealgas),dtype=bool)
-        for i in tqdm(range(len(rho_idealgas))):
-            for _ in range(Np):
-                try:
-                    theta = 2*np.pi*np.random.rand()
-                    radius = 0.05*np.random.rand()
-                    rho_delta = rho_idealgas[i] + radius * (rho_max - rho_min)*np.cos(theta)
-                    e_delta = e_idealgas[i] + radius*(e_max - e_min)*np.sin(theta)
-                    rho_delta = max(rho_min, min(rho_max, rho_delta))
-                    e_delta = max(e_min, min(e_max, e_delta))
-                    
-                    self.fluid.update(CP.DmassUmass_INPUTS, rho_delta, e_delta)
-                    self.__StateVars_additional[i, :], success_locations[i] = self.__GetStateVector()
-                except:
-                    self.__StateVars_additional[i, :] = None
-                    success_locations[i] = False
-        self.__StateVars_additional = self.__StateVars_additional[success_locations, :]
-        
         return 
     
     def __GetStateVector(self):

@@ -16,12 +16,7 @@ using physics-informed machine learning methods.
 
 .. toctree::
    Setup
-   Tutorials/create_configs
-   Config
-   DataGeneration
-   flameletprocessing 
-   mlmethods
-   MLPTraining
+   Development
    :maxdepth: 1
    :caption: Contents:
 
@@ -32,6 +27,12 @@ using physics-informed machine learning methods.
    Tutorials/create_configs.rst 
    :maxdepth: 2
    :caption: Tutorials: 
+
+
+.. toctree::
+   documentation/index.rst
+   :caption: Documentation
+   :maxdepth: 2
 
 
 Indices and tables
