@@ -32,6 +32,7 @@ from Common.DataDrivenConfig import Config_NICFD
 import gmsh 
 from concave_hull import concave_hull, concave_hull_indexes
 import meshio 
+import matplotlib.pyplot as plt
 
 
 def FiniteDifferenceDerivative(y:np.ndarray[float], x:np.ndarray[float]):
@@ -236,10 +237,11 @@ class SU2TableGenerator_NICFD:
         :rtype: tuple
         """
         # Create concave hull of normalized table coordinates.
-        XY_hull = concave_hull(np.unique(points,axis=0), length_threshold=1e-1)
-        
-        # Filter concave hull to remove nodes that are too close together.
-        hull_pts = []
+        add_sat_curve = (len(sat_curve_pts) > 0)
+        XY_hull = concave_hull(np.unique(points,axis=0), length_threshold=self._base_cell_size)
+        nans = np.isnan(XY_hull).all(1)
+        XY_hull = XY_hull[np.invert(nans), :]
+
         i = 0
         hull_indices = [i]
         while i < (len(XY_hull)-1):
@@ -254,13 +256,15 @@ class SU2TableGenerator_NICFD:
             i = i_next
             hull_indices.append(i_next)
         XY_hull = XY_hull[hull_indices, :]
-
+        
         # Initiate gmsh
         gmsh.initialize() 
         gmsh.model.add("table_level")
+        gmsh.option.setNumber("General.Verbosity", 0)
         factory = gmsh.model.geo
 
         # Create hull points
+        hull_pts = []
         for i in range(int(len(XY_hull))):
             hull_pts.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, self._base_cell_size))
         
@@ -281,10 +285,9 @@ class SU2TableGenerator_NICFD:
                 ref_pt_ids.append(factory.addPoint(ref_pts[i,0], ref_pts[i, 1], 0.0))
 
         # TODO: points with increased refinement 
-
         factory.addPhysicalGroup(2, [fluid_surf])
+        factory.synchronize()
         
-        add_sat_curve = (len(sat_curve_pts) > 0)
         if add_sat_curve:
 
             # Create normal vector to saturation curve.
@@ -295,14 +298,28 @@ class SU2TableGenerator_NICFD:
             # Create offset curves to ensure that no nodes are generated on the saturation curve itself.
             sat_curve_upper_pts = []
             sat_curve_lower_pts = []
+            dx = 0.5*self._refined_cell_size
+
+            sat_curve_rhoe_upper = sat_curve_pts + dx * norm_vector
+            sat_curve_rhoe_lower = sat_curve_pts - dx * norm_vector
+            inside_upper = np.logical_and(sat_curve_rhoe_upper > 0, sat_curve_rhoe_upper < 1).all(1)
+            inside_lower = np.logical_and(sat_curve_rhoe_lower > 0, sat_curve_rhoe_lower< 1).all(1)
+            valid_sat_curve_pts = np.logical_and(inside_upper, inside_lower)
+            nans_lower = np.isnan(sat_curve_rhoe_lower).all(1)
+            nans_upper = np.isnan(sat_curve_rhoe_upper).all(1)
+            valid_nans = np.logical_and(np.invert(nans_lower), np.invert(nans_upper))
+            valid_pts = np.logical_and(valid_sat_curve_pts, valid_nans)
+            sat_curve_pts = sat_curve_pts[valid_pts, :]
+            norm_vector = norm_vector[valid_pts, :]
+
             i = 0
             j = 1
-            dx = 0.5*self._refined_cell_size
             sat_curve_upper_pts.append(factory.addPoint(sat_curve_pts[i,0] + dx*norm_vector[i, 0],\
                                                         sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, self._refined_cell_size))
             sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
                                                         sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, self._refined_cell_size))
             while j < len(sat_curve_pts):
+                
                 dist = np.sqrt(np.sum(np.power(sat_curve_pts[j,:] - sat_curve_pts[i,:],2)))
                 if dist < dx:
                     j += 1 
@@ -421,7 +438,7 @@ class SU2TableGenerator_NICFD:
         """
         fluid_data_out = fluid_data_mesh.copy()
         self.valid_mask = np.zeros(len(fluid_data_mesh),dtype=np.bool)
-        for i in tqdm(range(len(fluid_data_mesh)),desc="Evaluating fluid properties..."):
+        for i in tqdm(range(len(fluid_data_mesh)),desc="Evaluating fluid properties on table nodes..."):
             try:
                 self._DataGenerator.UpdateFluid(fluid_data_mesh[i, EntropicVars.Density.value], fluid_data_mesh[i, EntropicVars.Energy.value])
                 state_vector, correct_phase = self._DataGenerator.GetStateVector()
@@ -440,8 +457,8 @@ class SU2TableGenerator_NICFD:
         print("Generating table on Cartesian grid")
         Np_rho = self._Config.GetNpDensity()
         Np_e = self._Config.GetNpEnergy()
+        self._DataGenerator.PreprocessData()
         if self._Config.GetAutoRange():
-            self._DataGenerator.PreprocessData()
             rho_min, rho_max = self._DataGenerator.GetDensityBounds()
             e_min, e_max = self._DataGenerator.GetEnergyBounds()
         else:
@@ -507,8 +524,9 @@ class SU2TableGenerator_NICFD:
         # Stack as (N, 2) array
         cv_table = np.column_stack([rho_valid, e_valid])
 
-        self._table_nodes = np.column_stack(tuple(self.state_data[:,:,EntropicVars[v].value][self.valid_mask].flatten() for v in self._table_vars))
-        
+        #self._table_nodes = np.column_stack(tuple(self.state_data[:,:,EntropicVars[v].value][self.valid_mask].flatten() for v in self._table_vars))
+        self._table_nodes = np.column_stack(tuple(self.state_data[:,:,i][self.valid_mask].flatten() for i in range(EntropicVars.N_STATE_VARS.value)))
+            
         # Create Delaunay triangulation
         tri = Delaunay(cv_table)
         self._table_connectivity = tri.simplices
@@ -546,8 +564,9 @@ class SU2TableGenerator_NICFD:
         return sat_curve_pts_norm
     
     def __GenerateMeshAndData(self, rhoe_norm:np.ndarray[float], sat_curve_pts:np.ndarray[float],ix_ref=[]):
-
+        
         rhoe_norm_mesh_nodes,tria = self.__Compute2DMesh(rhoe_norm, ref_pts=rhoe_norm[ix_ref,:], show=False, sat_curve_pts=sat_curve_pts)
+        
         # Calculate thermodynamic state variables of initial table nodes
         fluid_data_norm = np.zeros([len(rhoe_norm_mesh_nodes), EntropicVars.N_STATE_VARS.value])
         fluid_data_norm[:, EntropicVars.Density.value] = rhoe_norm_mesh_nodes[:,0]
@@ -561,6 +580,9 @@ class SU2TableGenerator_NICFD:
         """
 
         self.__CartesianTableData()
+        self._table_nodes = np.column_stack(tuple(self.state_data[:,:,i][self.valid_mask].flatten() for i in range(EntropicVars.N_STATE_VARS.value)))
+        self._fluid_data_scaler.fit(self._table_nodes)
+
         # Load initial fluid data and scale it
         if self._Config.GetTableDiscretization()=="cartesian":
             self.__CartesianTriangulation()
@@ -575,9 +597,9 @@ class SU2TableGenerator_NICFD:
 
             # Generate initial coarse table of fluid data
             rhoe_norm = fluid_data_norm[:, [EntropicVars.Density.value, EntropicVars.Energy.value]]
-            
+            print("Generating coarse thermodynamic mesh...")
             fluid_data_coarse, _ = self.__GenerateMeshAndData(rhoe_norm, sat_curve_pts_norm)
-
+            print("Done!")
             # Identify refinement locations
             fluid_data_norm = self._fluid_data_scaler.transform(fluid_data_coarse)
             ix_ref = self.__ApplyRefinement(fluid_data_norm)
@@ -586,8 +608,9 @@ class SU2TableGenerator_NICFD:
             rhoe_norm_mesh = fluid_data_norm[:, [EntropicVars.Density.value, EntropicVars.Energy.value]]
         
             # Create triangulation of filtered thermodynamic state data
+            print("Generating refined thermodynamic mesh...")
             fluid_data_ref, _ = self.__GenerateMeshAndData(rhoe_norm_mesh, sat_curve_pts_norm, ix_ref=ix_ref)
-            
+            print("Done!")
             fluid_data_norm_ref = self._fluid_data_scaler.transform(fluid_data_ref)
 
             DT = Delaunay(fluid_data_norm_ref[:, [EntropicVars.Density.value,EntropicVars.Energy.value]])
@@ -599,7 +622,6 @@ class SU2TableGenerator_NICFD:
             self._table_nodes = fluid_data_ref 
             self._table_connectivity = Tria 
             self._table_hullnodes = HullNodes
-            self.WriteOutParaview()
 
         return
     
@@ -617,7 +639,7 @@ class SU2TableGenerator_NICFD:
         conn2 = old_to_new[conn2]
 
         return conn2
-    def WriteOutParaview(self):
+    def WriteOutParaview(self,file_name_out:str="vtk_table"):
         """
         write a file containing all the LuT data that can be opened with Paraview
         
@@ -643,16 +665,16 @@ class SU2TableGenerator_NICFD:
             conn = conn - 1
 
         point_data = {}
-        for q in EntropicVars:
-            if q.value < EntropicVars.N_STATE_VARS.value:
-                point_data[q.name] = np.asarray(self._table_nodes[:, q.value])
+        for var in self._table_vars:
+            ivar = EntropicVars[var].value 
+            point_data[var] = np.asarray(self._table_nodes[:, ivar])
 
         mesh = meshio.Mesh(
             points=pts,
             cells=[("triangle", conn)],
             point_data=point_data
         )
-        mesh.write("vtk_table.vtk")
+        mesh.write("%s.vtk" % file_name_out)
 
         return
 
@@ -732,7 +754,8 @@ class SU2TableGenerator_NICFD:
         print("Writing table data...")
         fid.write("<Data>\n")
         for iNode in range(len(self._table_nodes)):
-            for ivar in range(len(self._table_vars)):
+            for var in self._table_vars:
+                ivar = EntropicVars[var].value 
                 fid.write("\t%+.14e" % self._table_nodes[iNode, ivar])
             fid.write("\n")
         fid.write("</Data>\n\n")
