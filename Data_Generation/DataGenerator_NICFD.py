@@ -47,7 +47,7 @@ class DataGenerator_CoolProp(DataGenerator_Base):
     """
     _Config:Config_NICFD
     fluid = None 
-    __accepted_phases:list[int] =  [CoolP.iphase_gas, CoolP.iphase_supercritical_gas, CoolP.iphase_supercritical]
+    __accepted_phases:list[int] =  [CoolP.iphase_gas, CoolP.iphase_supercritical_gas, CoolP.iphase_supercritical,CoolP.iphase_supercritical_liquid]
     # Pressure and temperature limits
     __use_PT:bool = DefaultSettings_NICFD.use_PT_grid
     __T_min:float = DefaultSettings_NICFD.T_min
@@ -172,7 +172,6 @@ class DataGenerator_CoolProp(DataGenerator_Base):
                 X_max = self.__rho_max
                 Y_min = self.__e_min
                 Y_max = self.__e_max 
-        
         X_range = (X_min - X_max) * np.cos(np.linspace(0, 0.5*np.pi, self.__Np_X)) + X_max
         Y_range = np.linspace(Y_min, Y_max, self.__Np_Y)
         self.__X_grid, self.__Y_grid = np.meshgrid(X_range, Y_range)
@@ -542,6 +541,19 @@ class DataGenerator_CoolProp(DataGenerator_Base):
             dhdP_rho = dhde_rho * (1 / dPde_rho)
             dsdrho_P = dsdrho_e - dPdrho_e * (1 / dPde_rho) * dsde_rho
             dsdP_rho = dsde_rho / dPde_rho
+
+            X = self.fluid.Q()
+            self.fluid.update(CoolP.PQ_INPUTS, Pressure, 1)
+            cp_vap = self.fluid.cpmass()
+            cv_vap = self.fluid.cvmass()
+            rho_vap = self.fluid.rhomass()
+            self.fluid.update(CoolP.PQ_INPUTS, Pressure,0)
+            cp_liq = self.fluid.cpmass()
+            cv_liq = self.fluid.cvmass()
+            alpha=X*rho / rho_vap
+            Cp = alpha * cp_vap + (1-alpha)*cp_liq
+            Cv = alpha * cv_vap + (1-alpha)*cv_liq
+            self.fluid.update(CoolP.DmassUmass_INPUTS, rho, e)
         else:
             dPde_rho = self.fluid.first_partial_deriv(CP.iP, CP.iUmass, CP.iDmass)
             dPdrho_e = self.fluid.first_partial_deriv(CP.iP, CP.iDmass, CP.iUmass)
