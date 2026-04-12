@@ -634,6 +634,7 @@ class FlameletConcatenator:
         flamelets = listdir(flamelet_dir + "/" + eq_file)
         for i_flamelet, f in enumerate(flamelets):
             BurningFlamelet:bool = True
+            is_interpolated_burner = "_int" in f
 
             # Get flamelet variables
             fid = open(flamelet_dir + "/" + eq_file + "/" + f, 'r')
@@ -660,7 +661,7 @@ class FlameletConcatenator:
             S_flamelet = np.append(np.array([0]), np.cumsum(dS))
             is_valid_flamelet = True
 
-            if (max(S_flamelet) == 0) and not is_equilibrium:
+            if (max(S_flamelet) == 0) and not (is_equilibrium or is_interpolated_burner):
                 print("Dodgy flamelet data file: " + flamelet_dir + "/" + eq_file + "/" + f)
                 is_valid_flamelet = False
 
@@ -668,12 +669,16 @@ class FlameletConcatenator:
                 S_flamelet_norm = S_flamelet / (max(S_flamelet)+1e-32)
 
                 T_flamelet = D[:, variables.index(FGMVars.Temperature.name)]
-                if np.max(T_flamelet) < DefaultSettings_FGM.T_threshold and not is_equilibrium:
+                if np.max(T_flamelet) < DefaultSettings_FGM.T_threshold and not is_equilibrium and not is_interpolated_burner:
+                    print("Flamelet is not burning")
                     BurningFlamelet = False
 
                 sourceterm_zero_line_numbers = [0, -1]
 
-                if self.__write_LUT_data:
+                if is_interpolated_burner:
+                    # Zero all source terms for interpolated burner flamelets; properties are kept as-is.
+                    sourceterm_zero_line_numbers = np.arange(len(D))
+                elif self.__write_LUT_data:
                     # Set source terms to zero near the start and end of the flamelet.
                     temp_margin = 2e-2
                     T_max, T_min = np.max(T_flamelet), np.min(T_flamelet)

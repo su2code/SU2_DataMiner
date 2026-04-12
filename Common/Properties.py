@@ -1,8 +1,8 @@
 ###############################################################################################
-#       #      _____ __  _____      ____        __        __  ____                   #        #  
-#       #     / ___// / / /__ \    / __ \____ _/ /_____ _/  |/  (_)___  ___  _____   #        #  
-#       #     \__ \/ / / /__/ /   / / / / __ `/ __/ __ `/ /|_/ / / __ \/ _ \/ ___/   #        #      
-#       #    ___/ / /_/ // __/   / /_/ / /_/ / /_/ /_/ / /  / / / / / /  __/ /       #        #  
+#       #      _____ __  _____      ____        __        __  ____                   #        #
+#       #     / ___// / / /__ \    / __ \____ _/ /_____ _/  |/  (_)___  ___  _____   #        #
+#       #     \__ \/ / / /__/ /   / / / / __ `/ __/ __ `/ /|_/ / / __ \/ _ \/ ___/   #        #
+#       #    ___/ / /_/ // __/   / /_/ / /_/ / /_/ /_/ / /  / / / / / /  __/ /       #        #
 #       #   /____/\____//____/  /_____/\__,_/\__/\__,_/_/  /_/_/_/ /_/\___/_/        #        #
 #       #                                                                            #        #
 ###############################################################################################
@@ -17,17 +17,17 @@
 #                                                                                             |
 #                                                                                             |
 # Description:                                                                                |
-#  Default settings/names/properties for the various steps within the DataMiner workflow.     |                                                                          
-#                                                                                             |  
+#  Default settings/names/properties for the various steps within the DataMiner workflow.     |
+#                                                                                             |
 # Version: 3.0.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
-import tensorflow as tf 
+import tensorflow as tf
 from enum import Enum, auto
 
 class DefaultProperties:
-    
+
     train_fraction:float = 0.8
     test_fraction:float = 0.1
 
@@ -85,7 +85,7 @@ class FGMVars(Enum):
     Beta_ProgVar=auto()
     Beta_Enth_Thermal=auto()
     Beta_Enth=auto()
-    Beta_MixFrac=auto() 
+    Beta_MixFrac=auto()
 
 FGMSymbols:dict = {FGMVars.ProgressVariable.name : r"Progress variable $(\mathcal{Y})[-]$",\
                    FGMVars.EnthalpyTot.name : r"Total enthalpy $(h)[J \mathrm{kg}^{-1}]$",\
@@ -124,20 +124,20 @@ class DefaultSettings_NICFD(DefaultProperties):
     T_min:float = 300
     T_max:float = 600
     Np_temp:float = 600
-    
+
     P_min:float = 2e4
     P_max:float = 2e6
-    Np_p:float = 700 
+    Np_p:float = 700
 
     Rho_min:float = 0.5
-    Rho_max:float = 300 
-    
+    Rho_max:float = 300
+
     Energy_min:float = 3e5
-    Energy_max:float = 5.5e5 
-    
+    Energy_max:float = 5.5e5
+
     fluid_name:str = "Air"
     EOS_type:str = "HEOS"
-    use_PT_grid:bool = False 
+    use_PT_grid:bool = False
 
     controlling_variables:list[str] = [EntropicVars.Density.name, \
                                        EntropicVars.Energy.name]
@@ -152,7 +152,7 @@ class DefaultSettings_NICFD(DefaultProperties):
     config_type:str = "EntropicAI"
     supported_state_vars:list[str] = ["s","T","p","c2","dTdrho_e","dTde_rho","dpdrho_e","dpde_rho"]
     supported_backends:list[str] = ["HEOS","PR", "SRK", "IF97","REFPROP"]
-    
+
 class DefaultSettings_FGM(DefaultProperties):
     config_name:str = "config_FGM"
 
@@ -161,9 +161,10 @@ class DefaultSettings_FGM(DefaultProperties):
     T_min:float = 300.0
     T_max:float = 800.0
     Np_temp:int = 30
+    Np_mdot:int = 30
 
     T_threshold:float = 600.0
-    
+
     eq_ratio_min:float = 0.2
     eq_ratio_max:float = 20.0
     Np_eq:int = 30
@@ -184,7 +185,7 @@ class DefaultSettings_FGM(DefaultProperties):
     name_pv:str = "ProgressVariable"
     name_enth:str = "EnthalpyTot"
     name_mixfrac:str = "MixtureFraction"
-    
+
     controlling_variables:list[str] = [name_pv, name_enth, name_mixfrac]
 
     init_learning_rate_expo:float = -2.8
@@ -194,13 +195,13 @@ class DefaultSettings_FGM(DefaultProperties):
     activation_function:str = "gelu"
 
     preferential_diffusion:bool = False
-    run_mixture_fraction:bool = False 
+    run_mixture_fraction:bool = False
 
-    include_freeflames:bool = True 
-    include_burnerflames:bool = True 
-    include_equilibrium:bool = True 
-    include_counterflames:bool = False 
-    
+    include_freeflames:bool = True
+    include_burnerflames:bool = True
+    include_equilibrium:bool = True
+    include_counterflames:bool = False
+
     affinity_threshold:float = 0.7
     output_file_header:str = "flamelet_data"
     boundary_file_header:str = "boundary_data"

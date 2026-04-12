@@ -49,8 +49,8 @@ class SU2TableGenerator_Base:
     _base_cell_size:float = 1e-2#3.7e-3      # Table level base cell size.
 
     _refined_cell_size:float = 1e-3#2.5e-3#1.5e-3   # Table level refined cell size.
-    _refinement_radius:float = 5e-3#5e-2     # Table level radius within which refinement is applied.
-    _curvature_threshold:float = 0.3    # Curvature threshold above which refinement is applied.
+    _refinement_radius:float = 1e-2#5e-2     # Table level radius within which refinement is applied.
+    _curvature_threshold:float = 0.2    # Curvature threshold above which refinement is applied.
     _n_near:int = 4     # Number of nearest neighbors from which to evaluate flamelet data.
     _p_fac:int = 5      # Power by which to weigh distances from query point.
     _control_var_scaler:MinMaxScaler =None
@@ -546,7 +546,7 @@ class SU2TableGenerator:
         Z_Level = self._mixfrac_range_table[iLevel]
         Tria, Nodes_dim, HullIdx, TableDataLevel = self.ComputeTableLevelMesh(Z_Level)
 
-        print("Computed triagulation on level %i out of %i with %i nodes." % (iLevel+1, self._N_table_levels, len(Nodes_dim)))
+        print("Computed triangulation on level %i out of %i with %i nodes." % (iLevel+1, self._N_table_levels, len(Nodes_dim)))
 
         return [Nodes_dim, Tria, HullIdx, TableDataLevel]
 
@@ -812,7 +812,7 @@ class SU2TableGenerator:
 
         gmsh.model.mesh.field.add("Distance", 1)
         gmsh.model.mesh.field.setNumbers(1, "PointsList", embed_pts)
-        gmsh.model.mesh.field.setNumber(1, "Sampling", 400)
+        gmsh.model.mesh.field.setNumber(1, "Sampling", 500)
         gmsh.model.mesh.field.add("Threshold", 2)
         gmsh.model.mesh.field.setNumber(2, "InField", 1)
         gmsh.model.mesh.field.setNumber(2, "SizeMin", refined_cell_size)
