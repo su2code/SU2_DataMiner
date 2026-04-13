@@ -110,8 +110,6 @@ class SU2TableGenerator_NICFD:
                                       "Energy"]  # FGM controlling variables
     _fluid_data_scaler:MinMaxScaler= MinMaxScaler()  # Scaler for flamelet data controlling variables.
 
-    # TODO: option for adaptive mesh/Cartesian mesh 
-
     def __init__(self, Config:Config_NICFD, load_file:str=None):
         """
         Initiate table generator class.
@@ -123,7 +121,6 @@ class SU2TableGenerator_NICFD:
         self._controlling_variables= [c for c in self._Config.GetControllingVariables()]
 
         self._DataGenerator = DataGenerator_CoolProp(self._Config)
-
         entropic_vars = [a.name for a in EntropicVars][:-1]
         self._table_vars = entropic_vars.copy()
         if not self._Config.TwoPhase():
@@ -135,6 +132,18 @@ class SU2TableGenerator_NICFD:
         self.__LoadFluidData()
         return 
     
+    def SetFDStepSize(self, val_step_size:float=3e-7):
+        """Set the relative step size for density and static energy for evaluating fluid properties in the two-phase region.
+
+        :param val_step_size: relative finite-difference step size, defaults to 3e-7
+        :type val_step_size: float, optional
+        :raises Exception: if the provided value is negative or zero.
+        """
+        if val_step_size <= 0:
+            raise Exception("Relative step size for finite-differences should be positive.")
+        self._DataGenerator.SetFDStepSizes(val_step_size,val_step_size)
+        return 
+
     # TODO: setters for Cartesian table options 
 
     def SetCellSize_Coarse(self, cell_size_coarse:float=1e-2):

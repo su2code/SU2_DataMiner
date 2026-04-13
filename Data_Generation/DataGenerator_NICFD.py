@@ -69,15 +69,11 @@ class DataGenerator_CoolProp(DataGenerator_Base):
 
     # Entropy derivatives.
     __StateVars_fluid:np.ndarray[float] = None 
-    __StateVars_additional:np.ndarray[float] = None 
-
     __success_locations:np.ndarray[bool] = None 
     __mixture:bool = False 
 
-    __two_phase:bool = False 
-
-    __fd_step_size_rho:float = 1e-5 
-    __fd_step_size_e:float = 1e-5
+    __fd_step_size_rho:float = 7e-3
+    __fd_step_size_e:float = 7e-3
 
     def __init__(self, Config_in:Config_NICFD=None):
         DataGenerator_Base.__init__(self, Config_in=Config_in)
@@ -587,15 +583,28 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         state_vector_struct[EntropicVars.dTde_rho.name] = dTde_rho
         dTdrho_e = -Temperature * Temperature * d2sdedrho
         state_vector_struct[EntropicVars.dTdrho_e.name] = dTdrho_e
-        drhode_p = -dPde_rho / dPdrho_e 
+        
         dhde_rho = 1 + dPde_rho / rho 
         dhdrho_e = -Pressure * np.power(rho, -2) + dPdrho_e / rho 
         state_vector_struct[EntropicVars.dhde_rho.name] = dhdrho_e
         state_vector_struct[EntropicVars.dhdrho_e.name] = dhde_rho
-        dTde_p = dTde_rho + dTdrho_e * drhode_p
-        dhde_p = dhde_rho + drhode_p*dhdrho_e 
-        Cp = dhde_p / dTde_p
-        Cv = 1 / (dTde_rho+1e-16)
+
+        # drhode_p = -dPde_rho / dPdrho_e 
+        # dTde_p = dTde_rho + dTdrho_e * drhode_p
+        # dhde_p = dhde_rho + drhode_p*dhdrho_e 
+        # Cp = dhde_p / (dTde_p+np.sign(dTde_p)*1e-8)
+        # Cv = 1 / (dTde_rho+np.sign(dTde_rho)*1e-8)
+
+        X = self.fluid.Q()
+        self.fluid.update(CoolP.PQ_INPUTS, Pressure, 1)
+        cp_vap, cv_vap,rho_vap = self.fluid.cpmass(), self.fluid.cvmass(), self.fluid.rhomass()
+        self.fluid.update(CoolP.PQ_INPUTS, Pressure, 0)
+        cp_liq, cv_liq = self.fluid.cpmass(), self.fluid.cvmass()
+        alpha=X*rho/rho_vap
+        Cp =alpha*cp_vap+(1-alpha)*cp_liq
+        Cv =alpha*cv_vap+(1-alpha)*cv_liq
+        self.fluid.update(CP.DmassUmass_INPUTS, rho, e)
+
         state_vector_struct[EntropicVars.cp.name] = Cp
         state_vector_struct[EntropicVars.cv.name] = Cv
         dhdrho_P = dhdrho_e - dhde_rho * (1 / dPde_rho) * dPdrho_e
@@ -934,7 +943,31 @@ class DataGenerator_CoolProp(DataGenerator_Base):
             if alpha is None:
                 return x * k_g + (1.0 - x) * k_l
             return alpha * k_g + (1.0 - alpha) * k_l
-         
+    
+
+    def DiscretizationError(self, rho, e):
+        self.UpdateFluid(rho, e) 
+        state_vector,_ = self.GetStateVector()
+        self.UpdateFluid(rho, e) 
+        dPde_rho_ref = self.fluid.first_partial_deriv(CP.iP, CP.iUmass, CP.iDmass)
+        dPdrho_e_ref = self.fluid.first_partial_deriv(CP.iP, CP.iDmass, CP.iUmass)
+        dTde_rho_ref = self.fluid.first_partial_deriv(CP.iT, CP.iUmass, CP.iDmass)
+        dTdrho_e_ref = self.fluid.first_partial_deriv(CP.iT, CP.iDmass, CP.iUmass)
+        P_ref = self.fluid.p()
+        T_ref = self.fluid.T()
+        ref_data = np.array([P_ref, T_ref])
+
+        dPde_rho_test = state_vector[EntropicVars.dpde_rho.value]
+        dPdrho_e_test = state_vector[EntropicVars.dpdrho_e.value]
+        dTde_rho_test = state_vector[EntropicVars.dTde_rho.value]
+        dTdrho_e_test = state_vector[EntropicVars.dTdrho_e.value]
+        P_test = state_vector[EntropicVars.p.value]
+        T_test = state_vector[EntropicVars.T.value]
+        test_data = np.array([P_test, T_test])
+        
+        e = np.sum(np.power((test_data - ref_data)/test_data,2))
+        return e
+    
     def __compute_derivatives_fd(self, rho:float, e:float, s_center:float):
         """Compute all entropy derivatives using central finite differences. Works for both single-phase and two-phase regions.
 
