@@ -62,7 +62,11 @@ class Config_NICFD(Config):
     __viscosity_model:str = DefaultSettings_NICFD.viscosity_model
     __conductivity_model:str = DefaultSettings_NICFD.conductivity_model
     
+    # Phases to include in fluid data.
+    __gasphase:bool = True
     __twophase:bool = False 
+    __liquidphase:bool = False 
+    __supercritical:bool = True 
 
     __EOS_type:str=DefaultSettings_NICFD.EOS_type       # Equation of state used by CoolProp
     __fluid_mole_fractions:list[float] = [1.0]          # Mole fractions for components in fluid mixture.
@@ -282,6 +286,17 @@ class Config_NICFD(Config):
         """
         return self.__viscosity_model
     
+    def EnableGasPhase(self, gas_phase:bool=True):
+        self.__gasphase = gas_phase
+        return 
+    
+    def GasPhase(self):
+        return self.__gasphase 
+    
+    def EnableSuperCritical(self, supercritical:bool=True):
+        self.__supercritical = supercritical
+        return 
+    
     def EnableTwophase(self, two_phase:bool=False):
         """Include two-phase region in fluid data.
 
@@ -291,8 +306,23 @@ class Config_NICFD(Config):
         self.__twophase = two_phase 
         return 
     
+    def EnableLiquidPhase(self, liquid_phase:bool=False):
+        """Include thermodynamic state data from fluid in the liquid phase.
+
+        :param liquid_phase: include liquid-phase data, defaults to False
+        :type liquid_phase: bool, optional
+        """
+        self.__liquidphase = liquid_phase
+        return 
+    
     def TwoPhase(self):
         return self.__twophase
+    
+    def LiquidPhase(self):
+        return self.__liquidphase
+    
+    def SuperCritical(self):
+        return self.__supercritical 
     
     def GetEquationOfState(self):
         """Retrieve the equation of state backend used by CoolProp for fluid data calculations.

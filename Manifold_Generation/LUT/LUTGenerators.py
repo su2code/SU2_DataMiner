@@ -276,7 +276,6 @@ class SU2TableGenerator_NICFD:
 
         # Create a 2D plane of the enclosed space
         curvloop = factory.addCurveLoop(hull_lines)
-        fluid_surf = factory.addPlaneSurface([curvloop])
 
         # Apply refinement points
         ref_pt_ids = []
@@ -285,7 +284,6 @@ class SU2TableGenerator_NICFD:
                 ref_pt_ids.append(factory.addPoint(ref_pts[i,0], ref_pts[i, 1], 0.0))
 
         # TODO: points with increased refinement 
-        factory.addPhysicalGroup(2, [fluid_surf])
         factory.synchronize()
         
         if add_sat_curve:
@@ -298,7 +296,7 @@ class SU2TableGenerator_NICFD:
             # Create offset curves to ensure that no nodes are generated on the saturation curve itself.
             sat_curve_upper_pts = []
             sat_curve_lower_pts = []
-            dx = 0.5*self._refined_cell_size
+            dx = 0.01*self._refined_cell_size
 
             sat_curve_rhoe_upper = sat_curve_pts + dx * norm_vector
             sat_curve_rhoe_lower = sat_curve_pts - dx * norm_vector
@@ -309,6 +307,17 @@ class SU2TableGenerator_NICFD:
             nans_upper = np.isnan(sat_curve_rhoe_upper).all(1)
             valid_nans = np.logical_and(np.invert(nans_lower), np.invert(nans_upper))
             valid_pts = np.logical_and(valid_sat_curve_pts, valid_nans)
+
+            hull_DT = Delaunay(XY_hull)
+            within_hull = np.zeros(len(sat_curve_pts),dtype=np.bool)
+            for i in range(len(sat_curve_pts)):
+                rhoe_sat_upper = sat_curve_rhoe_upper[i,:]
+                within_hull_upper = hull_DT.find_simplex(rhoe_sat_upper)>=0
+                rhoe_sat_lower = sat_curve_rhoe_lower[i,:]
+                within_hull_lower = hull_DT.find_simplex(rhoe_sat_lower)>=0
+                within_hull[i] = (within_hull_upper and within_hull_lower)
+            valid_pts = np.logical_and(valid_pts, within_hull)
+
             sat_curve_pts = sat_curve_pts[valid_pts, :]
             norm_vector = norm_vector[valid_pts, :]
 
@@ -318,14 +327,15 @@ class SU2TableGenerator_NICFD:
                                                         sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, self._refined_cell_size))
             sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
                                                         sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, self._refined_cell_size))
+            dists = []
             while j < len(sat_curve_pts):
-                
                 dist = np.sqrt(np.sum(np.power(sat_curve_pts[j,:] - sat_curve_pts[i,:],2)))
-                if dist < dx:
+                if dist < self._refined_cell_size:
                     j += 1 
                 else:
                     i = j 
                     j += 1 
+                    dists.append(dist)
                     sat_curve_upper_pts.append(factory.addPoint(sat_curve_pts[i,0] + dx*norm_vector[i, 0],\
                                                                 sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, self._refined_cell_size))
                     sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
@@ -335,15 +345,28 @@ class SU2TableGenerator_NICFD:
                 sat_curve_connecting_lines.append(factory.addLine(sat_curve_lower_pts[i], sat_curve_upper_pts[i]))
             sat_curve_upper_lines = []
             sat_curve_lower_lines = []
+
+            sat_curve_crvloops = []
+            sat_curve_cornertags = []
             for i in range(len(sat_curve_lower_pts)-1):
-                sat_curve_upper_lines.append(factory.addLine(sat_curve_upper_pts[i],sat_curve_upper_pts[i+1]))
-                sat_curve_lower_lines.append(factory.addLine(sat_curve_lower_pts[i],sat_curve_lower_pts[i+1]))
-                
+                if dists[i] < self._base_cell_size:
+                    c_upper=factory.addLine(sat_curve_upper_pts[i],sat_curve_upper_pts[i+1])
+                    c_lower=factory.addLine(sat_curve_lower_pts[i],sat_curve_lower_pts[i+1])
+                    sat_curve_upper_lines.append(c_upper)
+                    sat_curve_lower_lines.append(c_lower)
+                    sat_curve_crvloops.append(factory.addCurveLoop([c_upper, -sat_curve_connecting_lines[i+1], -c_lower, sat_curve_connecting_lines[i]]))
+                    sat_curve_cornertags.append([sat_curve_lower_pts[i], sat_curve_lower_pts[i+1], sat_curve_upper_pts[i+1], sat_curve_upper_pts[i]])
             factory.synchronize()
-            gmsh.model.mesh.embed(1, sat_curve_upper_lines, 2, fluid_surf)
-            gmsh.model.mesh.embed(1, sat_curve_lower_lines, 2, fluid_surf)
-            gmsh.model.mesh.embed(1, sat_curve_connecting_lines, 2, fluid_surf)
+            fluid_plane_crvloops = [curvloop] + [-c for c in sat_curve_crvloops]
+            fluid_surf = factory.addPlaneSurface(fluid_plane_crvloops)
+            sat_surfs = [factory.addPlaneSurface([c]) for c in sat_curve_crvloops]
+            factory.addPhysicalGroup(2, [fluid_surf] + sat_surfs)
+        else:
+            factory.synchronize()
+            fluid_surf = factory.addPlaneSurface([curvloop])
+            factory.addPhysicalGroup(2, [fluid_surf])
         # Apply conditional refinement, where the refined cell size is applied in proximity to the refinement points
+        factory.synchronize()
         threshold_fields = []
         dist_field_ref_pt = gmsh.model.mesh.field.add("Distance")
         gmsh.model.mesh.field.setNumbers(dist_field_ref_pt, "PointsList", ref_pt_ids)
@@ -359,7 +382,7 @@ class SU2TableGenerator_NICFD:
         if add_sat_curve:
             dist_field_sat_crv = gmsh.model.mesh.field.add("Distance")
             gmsh.model.mesh.field.setNumbers(dist_field_sat_crv, \
-                                             "CurvesList", sat_curve_lower_lines + sat_curve_upper_lines + sat_curve_connecting_lines)
+                                             "PointsList", sat_curve_upper_pts + sat_curve_lower_pts)
             gmsh.model.mesh.field.setNumber(dist_field_sat_crv, "Sampling", 10)
             t_field_sat_crv = gmsh.model.mesh.field.add("Threshold")
             gmsh.model.mesh.field.setNumber(t_field_sat_crv, "InField", dist_field_sat_crv)
@@ -374,7 +397,16 @@ class SU2TableGenerator_NICFD:
         gmsh.model.mesh.field.setAsBackgroundMesh(back_field)
 
         factory.synchronize()
-        gmsh.model.mesh.setRecombine(2, fluid_surf)
+        if add_sat_curve:
+            for i in range(len(sat_curve_connecting_lines)):
+                gmsh.model.mesh.setTransfiniteCurve(sat_curve_connecting_lines[i], 2)
+            for i in range(len(sat_curve_lower_lines)):
+                gmsh.model.mesh.setTransfiniteCurve(sat_curve_lower_lines[i], 2)
+                gmsh.model.mesh.setTransfiniteCurve(sat_curve_upper_lines[i], 2)
+                
+            for s, c in zip(sat_surfs, sat_curve_cornertags):
+                gmsh.model.mesh.setTransfiniteSurface(s, cornerTags=c)
+                gmsh.model.mesh.setRecombine(2, s)
         # Generate 2D mesh and extract table nodes
         gmsh.model.mesh.generate(2)
 
