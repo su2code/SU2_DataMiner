@@ -38,148 +38,6 @@ from multiprocessing import Pool
 from Common.Interpolators import Invdisttree
 from random import sample
 
-class SU2TableGenerator_Base:
-    _Config = None
-    _savedir:str
-    _table_variables:list[str] = None
-    _manifold_variables:list[str]
-    _controlling_variables:list[str] = None
-    _manifold_data:np.ndarray[float] = None
-    _manifold_data_interpolator:Invdisttree = None
-    _base_cell_size:float = 1e-2#3.7e-3      # Table level base cell size.
-
-    _refined_cell_size:float = 1e-3#2.5e-3#1.5e-3   # Table level refined cell size.
-    _refinement_radius:float = 1e-2#5e-2     # Table level radius within which refinement is applied.
-    _curvature_threshold:float = 0.2    # Curvature threshold above which refinement is applied.
-    _n_near:int = 4     # Number of nearest neighbors from which to evaluate flamelet data.
-    _p_fac:int = 5      # Power by which to weigh distances from query point.
-    _control_var_scaler:MinMaxScaler =None
-    _table_nodes = []       # Progress variable, total enthalpy, and mixture fraction node values for each table level.
-    _table_nodes_norm = []  # Normalized table nodes for each level.
-    _table_connectivity = []    # Table node connectivity per table level.
-    _table_hullnodes = []   # Hull node indices per table level.
-
-    def __init__(self, Config_in):
-        self._Config = Config_in
-        self._savedir = self._Config.GetOutputDir()
-        return
-
-    def SetSaveDir(self, save_dir:str):
-        if not os.path.isdir(save_dir):
-            raise Exception("Output directory %s not present on current hardware." % save_dir)
-        self._savedir = save_dir
-        return
-
-    def SetBaseCellSize(self, cell_size:float):
-        """
-        Define the base cell size for the table levels.
-
-        :param cell_size: Normalized coarse cell size for each 2D table mesh.
-        :type cell_size: float
-        :raise: Exception: if cell size is lower or equal to zero.
-        """
-        if cell_size > 0:
-            self._base_cell_size = cell_size
-        else:
-            raise Exception("Proviced cell size should be higher than zero.")
-        return
-
-    def SetRefinedCellSize(self, cell_size:float):
-        """
-        Define the refinement cell size for the table levels.
-
-        :param cell_size: Normalized fine cell size for each 2D table mesh.
-        :type cell_size: float
-        :raise: Exception: if cell size is lower or equal to zero.
-        """
-        if cell_size > 0:
-            self._refined_cell_size = cell_size
-        else:
-            raise Exception("Proviced cell size should be higher than zero.")
-        return
-
-    def SetRefinementThreshold(self, val_threshold:float):
-        """
-        Define normalized curvature threshold beyond which refinement should be applied to each table level.
-
-        :param val_threshold: Normalized curvature threshold value. All locations in the mesh with a higher curvature receive refinement.
-        :type val_threshold: float
-        :raises: Exception: If the threshold value is lower than zero.
-        """
-
-        if val_threshold > 0:
-            self._curvature_threshold = val_threshold
-        else:
-            raise Exception("Curvature threshold value should be higher than zero.")
-        return
-
-
-    def DefineFlameletDataInterpolator(self):
-
-        print("Configuring KD-tree for most accurate lookups")
-
-        print("Loading flamelet data...")
-        # Define scaler for FGM controlling variables.
-        full_data_file = self._Config.GetOutputDir()+"/LUT_data_full.csv"
-        with open(full_data_file,'r') as fid:
-            self._manifold_variables = fid.readline().strip().split(',')
-        #D_full = np.loadtxt(full_data_file,delimiter=',',skiprows=1)
-        self._control_var_scaler = MinMaxScaler()
-        CV_full, D_full = GetReferenceData(full_data_file, self._controlling_variables, self._manifold_variables)
-        data_scaler = MinMaxScaler()
-        data_scaler.fit_transform(D_full)
-
-        CV_full_scaled = self._control_var_scaler.fit_transform(CV_full)
-
-        # Exctract train and test data
-        train_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_train.csv"
-        test_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_test.csv"
-
-        CV_train, D_train = GetReferenceData(train_data_file, self._controlling_variables, self._manifold_variables)
-        CV_test, D_test = GetReferenceData(test_data_file, self._controlling_variables, self._manifold_variables)
-
-        CV_train_scaled = self._control_var_scaler.transform(CV_train)
-        CV_test_scaled = self._control_var_scaler.transform(CV_test)
-        D_train_scaled = data_scaler.transform(D_train)
-        D_test_scaled = data_scaler.transform(D_test)
-
-        print("Done!")
-        print("Setting up KD-tree...")
-        self._lookup_tree = Invdisttree(X=CV_train_scaled,z=D_train_scaled)
-        print("Done!")
-
-        print("Search for best tree parameters...")
-        # Do brute-force search to get the optimum number of nearest neighbors and distance power.
-        n_near_range = range(1, 20)
-        p_range = range(1, 6)
-        RMS_ppv = np.zeros([len(n_near_range), len(p_range)])
-        for i in tqdm(range(len(n_near_range))):
-            for j in range(len(p_range)):
-                PPV_predicted = self._lookup_tree(q=CV_test_scaled, nnear=n_near_range[i], p=p_range[j])
-                rms_local = np.average(np.power(PPV_predicted - D_test_scaled, 2))
-                RMS_ppv[i,j] = rms_local
-        [imin,jmin] = divmod(RMS_ppv.argmin(), RMS_ppv.shape[1])
-        self._n_near = n_near_range[imin]
-        self._p_fac = p_range[jmin]
-        print("Done!")
-        print("Best found number of nearest neighbors: "+str(self._n_near))
-        print("Best found distance power: "+str(self._p_fac))
-        print("Setting up KD-tree...")
-        self._lookup_tree = Invdisttree(X=CV_full_scaled,z=D_full)
-        print("Done!")
-
-        return
-
-    def EvaluateManifoldInterpolator(self, CV_unscaled:np.ndarray):
-        CV_scaled = self._control_var_scaler.transform(CV_unscaled)
-        data_interp = self._lookup_tree(q=CV_scaled,nnear=self._n_near,p=self._p_fac)
-        return data_interp
-
-    def Compute2DTable(self, CV_1:str, CV_2:str):
-        Np_grid = 300
-
-        return
-
 class SU2TableGenerator:
 
     _Config:Config_FGM = None # Config_FGM class from which to read settings.
@@ -204,11 +62,13 @@ class SU2TableGenerator:
 
     _N_table_levels:int = 100   # Number of table levels.
     _mixfrac_range_table:np.ndarray[float] = None   # Mixture fraction values of the table levels.
-    _base_cell_size:float = 1e-2#3.7e-3      # Table level base cell size.
+    _base_cell_size:float = 2e-2#3.7e-3      # Table level base cell size.
 
-    _refined_cell_size:float = 1e-3#2.5e-3#1.5e-3   # Table level refined cell size.
-    _refinement_radius:float = 5e-3#5e-2     # Table level radius within which refinement is applied.
-    _curvature_threshold:float = 0.3    # Curvature threshold above which refinement is applied.
+    _refined_cell_size:float = 1e-2#2.5e-3#1.5e-3   # Table level refined cell size.
+    _convex_hull_cell_size:float = 1e-2   # Cell size along the convex hull boundary.
+    _refinement_radius:float = 2e-2#5e-2     # Table level radius within which refinement is applied.
+    _curvature_threshold:float = 0.05    # Normalized gradient/curvature threshold above which refinement is applied (0.5 = top 50% of max gradient).
+    _refinement_method:str = "gradient"  # Refinement method: "gradient" or "curvature".
 
     _table_nodes = []       # Progress variable, total enthalpy, and mixture fraction node values for each table level.
     _table_nodes_norm = []  # Normalized table nodes for each level.
@@ -435,7 +295,8 @@ class SU2TableGenerator:
         :raises Exception: if the mixture fraction value lies outside the flamelet data range.
         """
 
-        Tria, Nodes, HullIdx,level_data = self.ComputeTableLevelMesh(val_mix_frac)
+        Tria, Nodes, HullIdx, level_data, XY_ref_dim = self.ComputeTableLevelMesh(val_mix_frac)
+        print("Total mesh nodes: %i, refinement seed points: %i" % (len(Nodes), len(XY_ref_dim)))
 
         if var_to_plot == None:
             _ = plt.figure(figsize=[10,10])
@@ -448,9 +309,11 @@ class SU2TableGenerator:
             ax.set_title(r"2D table mesh at Z="+str(val_mix_frac))
             plt.show()
         else:
-            _ = plt.figure(figsize=[10,10])
-            ax = plt.axes(projection='3d')
-            ax.plot3D(Nodes[:, 0], Nodes[:, 1], level_data[:, self._Flamelet_Variables.index(var_to_plot)],'k.')
+            var_idx = self._Flamelet_Variables.index(var_to_plot)
+            fig = plt.figure(figsize=[10,10])
+            ax = fig.add_subplot(111, projection='3d')
+            ax.plot_trisurf(Nodes[:, 0], Nodes[:, 1], level_data[:, var_idx],
+                            triangles=Tria, cmap='viridis', alpha=0.6, edgecolor='k', linewidth=0.2)
             ax.set_xlabel(r"Progress Variable $(\mathcal{Y})[-]$", fontsize=20)
             ax.set_ylabel(r"Total Enthalpy $(h)[J kg^{-1}]$", fontsize=20)
             ax.legend(fontsize=20)
@@ -544,7 +407,7 @@ class SU2TableGenerator:
         # Compute the connectivity, normalized node values, and hull indices for the table level at the respective
         #   mixture fraction value.
         Z_Level = self._mixfrac_range_table[iLevel]
-        Tria, Nodes_dim, HullIdx, TableDataLevel = self.ComputeTableLevelMesh(Z_Level)
+        Tria, Nodes_dim, HullIdx, TableDataLevel, _ = self.ComputeTableLevelMesh(Z_Level)
 
         print("Computed triangulation on level %i out of %i with %i nodes." % (iLevel+1, self._N_table_levels, len(Nodes_dim)))
 
@@ -648,13 +511,22 @@ class SU2TableGenerator:
         :rtype Connecivity: NDarray
         :return MeshNodes:
         """
-        Coord_refinement, Coord_hull, hull_area,z_norm, CV_mesh, table_level_data  = self.__ComputeCurvature(val_mix_frac)
-        MeshNodes_Norm, table_level_data = self.__Compute2DMesh(XY_hull=Coord_hull, XY_refinement=Coord_refinement,val_mixfrac_norm=z_norm, level_area=hull_area)
+        Coord_refinement, Coord_hull, hull_area, z_norm, CV_mesh, table_level_data = self.__ComputeCurvature(val_mix_frac)
+        MeshNodes_Norm, table_level_data = self.__Compute2DMesh(XY_hull=Coord_hull, XY_refinement=Coord_refinement, val_mixfrac_norm=z_norm, level_area=hull_area)
 
         Tria = Delaunay(MeshNodes_Norm[:, :2])
         HullNodes = Tria.convex_hull[:, 0]
         MeshNodes_dim = self._scaler.inverse_transform(MeshNodes_Norm)
-        return Tria.simplices, MeshNodes_dim, HullNodes, table_level_data
+
+        # Inverse-transform refinement seed coordinates for visualization.
+        if len(Coord_refinement) > 0:
+            mixfrac_ref = z_norm * np.ones((len(Coord_refinement), 1))
+            XY_ref_3d = np.hstack([Coord_refinement, mixfrac_ref])
+            XY_refinement_dim = self._scaler.inverse_transform(XY_ref_3d)
+        else:
+            XY_refinement_dim = np.empty((0, 3))
+
+        return Tria.simplices, MeshNodes_dim, HullNodes, table_level_data, XY_refinement_dim
 
     def __ComputeCurvature(self, val_mix_frac:float):
         """
@@ -693,8 +565,8 @@ class SU2TableGenerator:
         h_min = self._Config.gas.enthalpy_mass
 
         # Define 2D grid between minimum and maximum progress variable and total enthalpy
-        pv_range = np.linspace(pv_unb, pv_b, 500)
-        h_range = np.linspace(h_min, h_max, 500)
+        pv_range = np.linspace(pv_unb, pv_b, 800)
+        h_range = np.linspace(h_min, h_max, 800)
         xgrid, ygrid = np.meshgrid(pv_range, h_range)
         zgrid = val_mix_frac*np.ones(np.shape(xgrid))
 
@@ -716,11 +588,14 @@ class SU2TableGenerator:
         x_hull = CV_grid_norm[hull.vertices, 0]
         y_hull = CV_grid_norm[hull.vertices, 1]
 
-        # 4: Locate refinement locations based on pv source term curvature
+        # 4: Locate refinement locations based on pv source term steepness
         Q_interp = self.__EvaluateFlameletInterpolator(CV_unscaled=CV_grid_init)
         ppv_grid = Q_interp[:, self._Flamelet_Variables.index("ProdRateTot_PV")]
         ppv_grid = np.reshape(ppv_grid, np.shape(xgrid))
-        idx_ref = self.__ComputeSourceTermCurvature(ppv_grid)
+        if self._refinement_method == "curvature":
+            idx_ref = self.__ComputeSourceTermCurvature(ppv_grid)
+        else:
+            idx_ref = self.__ComputeSourceTermGradient(ppv_grid)
 
         x_refinement = CV_grid_norm_init[idx_ref, 0]
         y_refinement = CV_grid_norm_init[idx_ref, 1]
@@ -739,11 +614,6 @@ class SU2TableGenerator:
         CV_b = np.hstack((pv_b_range[:,np.newaxis], h_b_range[:,np.newaxis],z_b_range[:,np.newaxis]))
         CV_b_norm = self._scaler.transform(CV_b)
 
-        x_refinement = np.append(x_refinement, CV_unb_norm[:,0])
-        x_refinement = np.append(x_refinement, CV_b_norm[:,0])
-        y_refinement = np.append(y_refinement, CV_unb_norm[:,1])
-        y_refinement = np.append(y_refinement, CV_b_norm[:,1])
-
         XY_refinement = np.vstack((x_refinement, y_refinement)).T
         XY_hull = np.vstack((x_hull, y_hull)).T
 
@@ -751,6 +621,15 @@ class SU2TableGenerator:
 
 
         return XY_refinement, XY_hull, hull.area, val_mix_frac_norm, CV_grid, Q_interp
+
+    def __ComputeSourceTermGradient(self, PPV_interp:np.ndarray[float]):
+        Q_norm = (PPV_interp - np.min(PPV_interp))/(np.max(PPV_interp) - np.min(PPV_interp))
+        dQdy, dQdx = np.gradient(Q_norm)
+        dQ_mag = np.sqrt(np.power(dQdy, 2) + np.power(dQdx, 2))
+        dQ_norm = dQ_mag / np.max(dQ_mag)
+        dQ_norm = dQ_norm.flatten()
+        idx_ref = np.where(dQ_norm > self._curvature_threshold)
+        return idx_ref
 
     def __ComputeSourceTermCurvature(self, PPV_interp:np.ndarray[float]):
         Q_norm = (PPV_interp - np.min(PPV_interp))/(np.max(PPV_interp) - np.min(PPV_interp))
@@ -782,22 +661,30 @@ class SU2TableGenerator:
         gmsh.model.add("table_level")
         factory = gmsh.model.geo
 
-        base_cell_size = self._base_cell_size * level_area
-        refined_cell_size = self._refined_cell_size * level_area
-        refinement_radius = self._refinement_radius * np.sqrt(level_area)
-
+        base_cell_size = self._base_cell_size #* level_area
+        refined_cell_size = self._refined_cell_size #* level_area
+        hull_cell_size = self._convex_hull_cell_size
+        refinement_radius = self._refinement_radius #* np.sqrt(level_area)
+        print("Generating 2D mesh with base cell size %.4f, hull cell size %.4f and refined cell size %.4f" % (base_cell_size, hull_cell_size, refined_cell_size))
         hull_pts = []
         for i in range(int(len(XY_hull)/2)):
-            hull_pts.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, base_cell_size))
+            hull_pts.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, hull_cell_size))
         hull_pts_2 = [hull_pts[-1]]
         for i in range(int(len(XY_hull)/2), len(XY_hull)):
-            hull_pts_2.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, base_cell_size))
+            hull_pts_2.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, hull_cell_size))
         hull_pts_2.append(hull_pts[0])
-        embed_pts = []
-        for i in range(len(XY_refinement)):
-            pt_idx = factory.addPoint(XY_refinement[i, 0], XY_refinement[i, 1], 0, refined_cell_size)
-            embed_pts.append(pt_idx)
 
+        # Subsample refinement seed points to avoid excessive PointsList size.
+        N_max_seeds = 500
+        if len(XY_refinement) > N_max_seeds:
+            idx_sub = np.round(np.linspace(0, len(XY_refinement) - 1, N_max_seeds)).astype(int)
+            XY_refinement_sub = XY_refinement[idx_sub]
+        else:
+            XY_refinement_sub = XY_refinement
+        embed_pts = []
+        for i in range(len(XY_refinement_sub)):
+            pt_idx = factory.addPoint(XY_refinement_sub[i, 0], XY_refinement_sub[i, 1], 0, refined_cell_size)
+            embed_pts.append(pt_idx)
 
         hull_curve_1 = factory.addPolyline(hull_pts)
         hull_curve_2 = factory.addPolyline(hull_pts_2)
@@ -810,9 +697,14 @@ class SU2TableGenerator:
         gmsh.model.addPhysicalGroup(2, [surf], name="table_level")
         gmsh.model.geo.synchronize()
 
+        # Let the background mesh field fully control element sizes.
+        # Disabling these prevents the coarse hull boundary size from spreading
+        # inward and overriding the Threshold field in the refined region.
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+
         gmsh.model.mesh.field.add("Distance", 1)
         gmsh.model.mesh.field.setNumbers(1, "PointsList", embed_pts)
-        gmsh.model.mesh.field.setNumber(1, "Sampling", 500)
         gmsh.model.mesh.field.add("Threshold", 2)
         gmsh.model.mesh.field.setNumber(2, "InField", 1)
         gmsh.model.mesh.field.setNumber(2, "SizeMin", refined_cell_size)
@@ -820,15 +712,21 @@ class SU2TableGenerator:
         gmsh.model.mesh.field.setNumber(2, "DistMin", refinement_radius)
         gmsh.model.mesh.field.setNumber(2, "DistMax", 1.5*refinement_radius)
 
+        # Refine along the convex hull boundary curves.
+        gmsh.model.mesh.field.add("Distance", 3)
+        gmsh.model.mesh.field.setNumbers(3, "CurvesList", [hull_curve_1, hull_curve_2])
+        gmsh.model.mesh.field.setNumber(3, "Sampling", 200)
+        gmsh.model.mesh.field.add("Threshold", 4)
+        gmsh.model.mesh.field.setNumber(4, "InField", 3)
+        gmsh.model.mesh.field.setNumber(4, "SizeMin", hull_cell_size)
+        gmsh.model.mesh.field.setNumber(4, "SizeMax", base_cell_size)
+        gmsh.model.mesh.field.setNumber(4, "DistMin", 0.0)
+        gmsh.model.mesh.field.setNumber(4, "DistMax", refinement_radius)
+
         gmsh.model.mesh.field.add("Min", 7)
-        gmsh.model.mesh.field.setNumbers(7, "FieldsList", [2])
+        gmsh.model.mesh.field.setNumbers(7, "FieldsList", [2, 4])
         gmsh.model.mesh.field.setAsBackgroundMesh(7)
 
-        lc = base_cell_size
-        def meshSizeCallback(dim,tag,x,y,z,lc):
-            return lc
-
-        gmsh.model.mesh.setSizeCallback(meshSizeCallback)
         gmsh.option.setNumber("Mesh.Algorithm", 5)
         gmsh.model.mesh.generate(2)
         nodes = gmsh.model.mesh.getNodes(dim=2, tag=-1, includeBoundary=True, returnParametricCoord=False)[1]

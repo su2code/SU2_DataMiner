@@ -68,7 +68,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
     #__initial_grid_length:float = 1e-2  # Flamelet grid width
     #__initial_grid_Np:int = 30          # Number of initial grid nodes.
-    __initial_grid_length:float = 0.1    # Flamelet grid width
+    __initial_grid_length:float = 0.15   # Flamelet grid width
     __initial_grid_Np:int = 20           # Number of initial grid nodes.
 
     __define_equivalence_ratio:bool = not DefaultSettings_FGM.run_mixture_fraction # Define unburnt mixture via the equivalence ratio
@@ -403,7 +403,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
             # First flame: create a new FreeFlame and place the flame front explicitly.
             initialgrid = np.linspace(0, self.__initial_grid_length, self.__initial_grid_Np)
             flame = ct.FreeFlame(self.gas, grid=initialgrid)
-            flame.set_refine_criteria(ratio=2, slope=0.025, curve=0.025, prune=0.01)
+            flame.set_refine_criteria(ratio=3, slope=0.05, curve=0.05, prune=0.01)
             flame.transport_model = self.__transport_model
             flame.set_initial_guess(locs=[0.0, 0.3, 0.5, 1.0])
         else:

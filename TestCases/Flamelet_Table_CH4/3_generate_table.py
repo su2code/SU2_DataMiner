@@ -11,25 +11,25 @@ Tgen = SU2TableGenerator(Config, n_near=14, p_fac=3)
 # here: phi = [0.5, 1.0] so use between [0.55, 0.95]
 
 # 0.8 - 0.81
-Tgen.SetMixtureFractionLimits(mix_frac_max=0.0451748, mix_frac_min=0.044642)
+Tgen.SetMixtureFractionLimits(mix_frac_max=0.04517488, mix_frac_min=0.04410865)
 #Tgen.SetMixtureFractionLimits(mix_frac_max=0.0525, mix_frac_min=0.0312)
-Tgen.SetNTableLevels(2)
+Tgen.SetNTableLevels(3)
 
 # Visualize the interpolated reaction rate at equivalence ratio 0.8.
-cv_target = Config.GetUnburntScalars(equivalence_ratio=0.805, temperature=270.0)
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.80, temperature=300.0)
 pv_target = cv_target[0]
 z_target = cv_target[2]
 print("Target unburnt progress variable: ", pv_target)
 Tgen.VisualizeTableLevel(z_target, "ProdRateTot_PV")
 
 # Visualize the interpolated reaction rate at equivalence ratio 0.8.
-cv_target = Config.GetUnburntScalars(equivalence_ratio=0.805, temperature=270.0)
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.80, temperature=300.0)
 pv_target = cv_target[0]
 z_target = cv_target[2]
 print("Target unburnt progress variable: ", pv_target)
 Tgen.VisualizeTableLevel(z_target, "Heat_Release")
 
-cv_target = Config.GetUnburntScalars(equivalence_ratio=0.805, temperature=270.0)
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.80, temperature=300.0)
 pv_target = cv_target[0]
 z_target = cv_target[2]
 print("Target unburnt progress variable: ", pv_target)

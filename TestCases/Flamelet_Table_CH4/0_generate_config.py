@@ -8,18 +8,18 @@ Config.SetConfigName("TableGeneration")
 Config.SetFuelDefinition(fuel_species=["CH4"],fuel_weights=[1.0])
 Config.SetReactionMechanism('gri30.yaml')
 
-Config.SetMixtureBounds(0.55, 0.95)
-Config.SetNpMix(41)
-Config.SetUnbTempBounds(270, 750)
-Config.SetNpTemp(49)
-Config.SetNpMdot(25)   # 25 burner flames across the mdot range
-Config.SetNpMdotExtra(50)   # 50 burner flames across the mdot range
-
-#Config.SetMixtureBounds(0.80, 0.81)
-#Config.SetNpMix(2)
+#Config.SetMixtureBounds(0.55, 0.95)
+#Config.SetNpMix(41)
 #Config.SetUnbTempBounds(270, 750)
 #Config.SetNpTemp(49)
 #Config.SetNpMdot(25)   # 25 burner flames across the mdot range
+#Config.SetNpMdotExtra(50)   # 50 burner flames across the mdot range
+
+Config.SetMixtureBounds(0.79, 0.81)
+Config.SetNpMix(5)
+Config.SetUnbTempBounds(270, 750)
+Config.SetNpTemp(49)
+Config.SetNpMdot(25)   # 25 burner flames across the mdot range
 
 
 #Config.RunFreeFlames(False)

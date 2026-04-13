@@ -22,20 +22,20 @@
 #                                                                                             |
 #=============================================================================================#
 
-import numpy as np 
+import numpy as np
 from scipy.spatial import ConvexHull, Delaunay
 from sklearn.preprocessing import MinMaxScaler,RobustScaler,StandardScaler, QuantileTransformer
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 import sys,os
 from Common.DataDrivenConfig import Config_NICFD
 import cantera as ct
-import gmsh 
+import gmsh
 import pickle
-from multiprocessing import Pool 
+from multiprocessing import Pool
 from sklearn.metrics import mean_squared_error
-from Common.Interpolators import Invdisttree 
-from random import sample 
+from Common.Interpolators import Invdisttree
+from random import sample
 
 class SU2TableGenerator:
 
@@ -52,12 +52,12 @@ class SU2TableGenerator:
     _Fluid_Variables:list[str] = None  # Variable names in the concatenated flamelet data file.
     _Flamelet_Data:np.ndarray[float] = None     # Concatenated flamelet data.
 
-    _custom_table_limits_set:bool = False 
+    _custom_table_limits_set:bool = False
     _mixfrac_min_table:float = None     # Lower mixture fraction limit of the table.
     _mixfrac_max_table:float = None     # Upper mixture fraction limit of the table.
 
-    __run_parallel:bool = False 
-    __Np_cores:int = 1 
+    __run_parallel:bool = False
+    __Np_cores:int = 1
 
     _N_table_levels:int = 100   # Number of table levels.
     _mixfrac_range_table:np.ndarray[float] = None   # Mixture fraction values of the table levels.
@@ -95,7 +95,7 @@ class SU2TableGenerator:
             self.__dict__ = loaded_table_generator.__dict__.copy()
         else:
             # Create new TableGenerator object.
-            self._Config = Config 
+            self._Config = Config
 
             self.__DefineFluidDataInterpolator()
 
@@ -129,14 +129,14 @@ class SU2TableGenerator:
         # Exctract train and test data
         train_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_full.csv"
         test_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_test.csv"
-        
+
         var_to_test_for = "d2sdrho2"
-        
+
         D_train = np.loadtxt(train_data_file,delimiter=',',skiprows=1)
         D_test = np.loadtxt(test_data_file,delimiter=',',skiprows=1)
-        
-        CV_train = np.vstack(tuple(D_train[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T 
-        CV_test = np.vstack(tuple(D_test[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T 
+
+        CV_train = np.vstack(tuple(D_train[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T
+        CV_test = np.vstack(tuple(D_test[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T
 
         CV_train_scaled = self._scaler.transform(CV_train)
         CV_test_scaled = self._scaler.transform(CV_test)
@@ -145,7 +145,7 @@ class SU2TableGenerator:
         print("Done!")
 
         self._lookup_tree = Invdisttree(X=CV_train_scaled,z=D_train)
-        
+
         print("Search for best tree parameters...")
         # Do brute-force search to get the optimum number of nearest neighbors and distance power.
         n_near_range = range(1, 20)
@@ -155,7 +155,7 @@ class SU2TableGenerator:
             for j in range(len(p_range)):
                 PPV_predicted = self._lookup_tree(q=CV_test_scaled, nnear=n_near_range[i], p=p_range[j])[:, self._Fluid_Variables.index(var_to_test_for)]
                 rms_local = mean_squared_error(y_true=PPV_test, y_pred=PPV_predicted)
-                RMS_ppv[i,j] = rms_local 
+                RMS_ppv[i,j] = rms_local
         [imin,jmin] = divmod(RMS_ppv.argmin(), RMS_ppv.shape[1])
         self._n_near = n_near_range[imin]
         self._p_fac = p_range[jmin]
@@ -167,10 +167,10 @@ class SU2TableGenerator:
         CV_scaled = self._scaler.transform(CV_unscaled)
         data_interp = self._lookup_tree(q=CV_scaled,nnear=self._n_near,p=self._p_fac)
         return data_interp
-    
+
     def ComputeTableMesh(self):
         return
-    
+
     def __ComputeCurvature(self):
         rho_min = self.__min_CV[self._controlling_variables.index("Density")]
         rho_max = self.__max_CV[self._controlling_variables.index("Density")]
@@ -178,16 +178,16 @@ class SU2TableGenerator:
         e_max = self.__max_CV[self._controlling_variables.index("Energy")]
 
         rho_range = (rho_min - rho_max)* (np.cos(np.linspace(0, 0.5*np.pi, 800))) + rho_max
-        e_range = np.linspace(e_min, e_max, 100)
+        e_range = np.linspace(e_min, e_max, 200)
         xgrid, ygrid = np.meshgrid(rho_range, e_range)
 
         CV_probe = self.CV_full
         probe_data = self.__EvaluateFluidInterpolator(CV_probe)
 
         DT = Delaunay(self.CV_full)
-        Tria = DT.simplices 
+        Tria = DT.simplices
         HullNodes = DT.convex_hull[:,0]
-        
+
         return CV_probe, probe_data, Tria, HullNodes
 
         # fig = plt.figure()
@@ -197,7 +197,7 @@ class SU2TableGenerator:
         # plt.show()
         # plt.triplot(CV_probe[:,0],CV_probe[:,1],DT.simplices)
         # plt.show()
-        
+
 
         # rho_probe = probe_data[:, self._Fluid_Variables.index("Density")]
         # e_probe = probe_data[:, self._Fluid_Variables.index("Energy")]
@@ -216,12 +216,12 @@ class SU2TableGenerator:
         # y_refinement = CV_vals_norm[idx_ref, 1]
         # x_hull = CV_vals_norm[hull.vertices, 0]
         # y_hull = CV_vals_norm[hull.vertices, 1]
-        
+
         # XY_refinement = np.vstack((x_refinement, y_refinement)).T
         # XY_hull = np.vstack((x_hull, y_hull)).T
 
         # return XY_refinement, XY_hull, hull.area
-    
+
     def __ComputeEntropyCurvature(self, s_interp:np.ndarray[float]):
         Q_norm = (s_interp - np.min(s_interp))/(np.max(s_interp) - np.min(s_interp))
         dQdy, dQdx = np.gradient(Q_norm)
@@ -232,8 +232,8 @@ class SU2TableGenerator:
         d2Q_norm = d2Q_mag / np.max(d2Q_mag)
         d2Q_norm = d2Q_norm.flatten()
         idx_ref = np.where(d2Q_norm > self._curvature_threshold/10)
-        return idx_ref 
-    
+        return idx_ref
+
     def __Compute2DMesh(self, XY_hull:np.ndarray, XY_refinement:np.ndarray, level_area:float):
         """
         Generate a 2D mesh for the current table level.
@@ -245,7 +245,7 @@ class SU2TableGenerator:
         :return: mesh nodes of the 2D table mesh.
         :rtype: NDArray
         """
-        gmsh.initialize() 
+        gmsh.initialize()
 
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("General.Verbosity", 1)
@@ -253,7 +253,7 @@ class SU2TableGenerator:
         factory = gmsh.model.geo
 
         base_cell_size = self._base_cell_size * level_area
-        refined_cell_size = self._refined_cell_size * level_area 
+        refined_cell_size = self._refined_cell_size * level_area
         refinement_radius = self._refinement_radius * np.sqrt(level_area)
 
         hull_pts = []
@@ -271,9 +271,9 @@ class SU2TableGenerator:
 
         hull_curve_1 = factory.addPolyline(hull_pts)
         hull_curve_2 = factory.addPolyline(hull_pts_2)
-        
+
         CL = factory.addCurveLoop([hull_curve_1, hull_curve_2])
-        
+
         surf = factory.addPlaneSurface([CL])
         gmsh.model.addPhysicalGroup(1, [hull_curve_1], name="hull_curve_1")
         gmsh.model.addPhysicalGroup(1, [hull_curve_2], name="hull_curve_2")
@@ -293,11 +293,11 @@ class SU2TableGenerator:
         gmsh.model.mesh.field.add("Min", 7)
         gmsh.model.mesh.field.setNumbers(7, "FieldsList", [2])
         gmsh.model.mesh.field.setAsBackgroundMesh(7)
-        
+
         lc = base_cell_size
         def meshSizeCallback(dim,tag,x,y,z,lc):
             return lc
-        
+
         gmsh.model.mesh.setSizeCallback(meshSizeCallback)
         gmsh.option.setNumber("Mesh.Algorithm", 5)
         gmsh.model.mesh.generate(2)
@@ -308,17 +308,17 @@ class SU2TableGenerator:
         # Remove mesh nodes that are out of bounds.
         pv_norm, enth_norm = MeshPoints[:, 0], MeshPoints[:, 1]
 
-        CV_level_norm = np.vstack((pv_norm, enth_norm)).T 
+        CV_level_norm = np.vstack((pv_norm, enth_norm)).T
         CV_level_dim = self._scaler.inverse_transform(CV_level_norm)
 
         MeshPoints = np.zeros([np.shape(MeshPoints)[0], 2])
-        MeshPoints[:, 0] = pv_norm 
-        MeshPoints[:, 1] = enth_norm 
+        MeshPoints[:, 0] = pv_norm
+        MeshPoints[:, 1] = enth_norm
 
         table_level_data = self.__EvaluateFluidInterpolator(CV_level_dim)
 
         return MeshPoints, table_level_data
-    
+
     def WriteTableFile(self, output_filepath:str=None):
         """
         Save the table data and connectivity as a Dragon library file. If no file name is provided, the table file will be named according to the Config_FGM class name.
