@@ -299,7 +299,7 @@ The composition of the output groups can be manually adapted and accessed with t
 
 .. autofunction:: Common.DataDrivenConfig.Config_FGM.AddOutputGroup
 
-.. autofunction:: Common.DataDrivenConfig.Config_FGM.DefineOutputGroup
+.. autofunction:: Common.DataDrivenConfig.Config_FGM.EditOutputGroup
 
 .. autofunction:: Common.DataDrivenConfig.Config_FGM.RemoveOutputGroup
 
