@@ -238,6 +238,11 @@ class Config_NICFD(Config):
         return 
     
     def CalcTransportProperties(self):
+        """Whether transport properties are included in the fluid data set.
+
+        :return: calculation of transport properties.
+        :rtype: bool
+        """
         return self.__calc_transport_properties 
     
     def SetConductivityModel(self, conductivity_model:str=DefaultSettings_NICFD.conductivity_model):
@@ -287,18 +292,33 @@ class Config_NICFD(Config):
         return self.__viscosity_model
     
     def EnableGasPhase(self, gas_phase:bool=True):
+        """Include thermophysical state data from the fluid in gas phase
+
+        :param gas_phase: include gas phase data, defaults to True
+        :type gas_phase: bool, optional
+        """
         self.__gasphase = gas_phase
         return 
     
     def GasPhase(self):
+        """Whether thermophysical state data from the fluid in the gaseous phase are included.
+
+        :return: inclusion of gas phase data.
+        :rtype: bool
+        """
         return self.__gasphase 
     
     def EnableSuperCritical(self, supercritical:bool=True):
+        """Include thermophysical state data of the fluid in supercritial, and of the supercritical gas and liquid phase if specified.
+
+        :param supercritical: include supercritical phase data, defaults to True
+        :type supercritical: bool, optional
+        """
         self.__supercritical = supercritical
         return 
     
     def EnableTwophase(self, two_phase:bool=False):
-        """Include two-phase region in fluid data.
+        """Include two-phase thermophysical data of the fluid.
 
         :param two_phase: include two-phase data in fluid data, defaults to False
         :type two_phase: bool, optional
@@ -316,12 +336,27 @@ class Config_NICFD(Config):
         return 
     
     def TwoPhase(self):
+        """Whether thermophysical state data from the fluid in the two-phase are included.
+
+        :return: inclusion of two-phase data.
+        :rtype: bool
+        """
         return self.__twophase
     
     def LiquidPhase(self):
+        """Whether thermophysical state data from the fluid in the liquid phase are included.
+
+        :return: inclusion of liquid phase data.
+        :rtype: bool
+        """
         return self.__liquidphase
     
     def SuperCritical(self):
+        """Whether thermophysical state data from the fluid in the supercritical phases are included.
+
+        :return: inclusion of supercritical phase data.
+        :rtype: bool
+        """
         return self.__supercritical 
     
     def GetEquationOfState(self):

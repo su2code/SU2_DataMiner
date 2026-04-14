@@ -1,3 +1,6 @@
+.. sectionauthor:: Evert Bunschoten
+
+
 .. _NICFD:
 
 SU2 DataMiner Configuration for NICFD
@@ -35,6 +38,7 @@ retrieved by running the following code snippet:
 
 .. autofunction:: Common.DataDrivenConfig.Config_NICFD.SetFluid
 
+.. _nicfd_data_limits: 
 
 Range of the Thermodynamic State Data 
 -------------------------------------
@@ -70,6 +74,34 @@ The limits of the fluid data grid are set with the following functions
 .. autofunction:: Common.DataDrivenConfig.Config_NICFD.SetDensityBounds
 
 
+Phases and transport properties 
+-------------------------------
+
+Thermophysical state data can be generated at various phases. The following functions can be used to specify in which phases thermophysical state data are included in the data generation process.
+*SU2 DataMiner* currently only supports the inclusion of fluid data in the gaseous, liquid, two-phase, supercritical, supercritical gas, and supercritical liquid phases. 
+Information about the phase data can be accessed with the following functions.
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.EnableGasPhase 
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.EnableLiquidPhase 
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.EnableSuperCritical 
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.GasPhase 
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.LiquidPhase 
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.SuperCritical 
+
+Transport properties can also be included in the fluid data set. Currently, these are limited to the fluid *thermal conductivity*, *dynamic viscosity*, and *vapor quality*. 
+Information on whether transport properties are included in the fluid data set can be accessed with the following functions: 
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.IncludeTransportProperties
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.CalcTransportProperties
+
+
+.. _resolutionsettings:
 
 Resolution 
 ----------
@@ -116,7 +148,22 @@ By default, these are entropy, pressure, temperature, and the speed of sound, bu
 
 
 
-   
+Tabulation 
+----------
+
+In addition to the EEoS-PINN method, thermophysical state information can also be stored in look-up tables. 
+The thermodynamic state space can be discretized with a *Cartesian* method or with an *adaptive* method. 
+With the Cartesian method, the thermodynamic state space is divided into equally sized, rectangular cells in the density-static energy space.
+The number of cells along the density and energy axes are specified with the :ref:`setters <resolutionsettings>` for thermodynamic state space resolution.
+With the adaptive method, the thermodynamic state space is divided into triangular elements and can be locally refined in areas of interest such as around the saturation curve.
+For both methods, the limits of the table can be specified with the :ref:`setters <nicfd_data_limits>` for the density and static energy ranges. 
+
+Information on the table discretization method can be accessed with the following functions:
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.SetTableDiscretization
+
+.. autofunction:: Common.DataDrivenConfig.Config_NICFD.GetTableDiscretization
+
 
 References
 ----------
