@@ -300,7 +300,7 @@ class SU2TableGenerator_NICFD:
             # Create offset curves to ensure that no nodes are generated on the saturation curve itself.
             sat_curve_upper_pts = []
             sat_curve_lower_pts = []
-            dx = 0.01*self._refined_cell_size
+            dx = 1e-3*self._refined_cell_size
 
             sat_curve_rhoe_upper = sat_curve_pts + dx * norm_vector
             sat_curve_rhoe_lower = sat_curve_pts - dx * norm_vector
@@ -328,22 +328,22 @@ class SU2TableGenerator_NICFD:
             i = 0
             j = 1
             sat_curve_upper_pts.append(factory.addPoint(sat_curve_pts[i,0] + dx*norm_vector[i, 0],\
-                                                        sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, self._refined_cell_size))
+                                                        sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
             sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
-                                                        sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, self._refined_cell_size))
+                                                        sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
             dists = []
             while j < len(sat_curve_pts):
                 dist = np.sqrt(np.sum(np.power(sat_curve_pts[j,:] - sat_curve_pts[i,:],2)))
-                if dist < self._refined_cell_size:
+                if dist < 0.6*self._refined_cell_size:
                     j += 1 
                 else:
                     i = j 
                     j += 1 
                     dists.append(dist)
                     sat_curve_upper_pts.append(factory.addPoint(sat_curve_pts[i,0] + dx*norm_vector[i, 0],\
-                                                                sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, self._refined_cell_size))
+                                                                sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
                     sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
-                                                                sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, self._refined_cell_size))
+                                                                sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
             sat_curve_connecting_lines = []
             for i in range(len(sat_curve_upper_pts)):
                 sat_curve_connecting_lines.append(factory.addLine(sat_curve_lower_pts[i], sat_curve_upper_pts[i]))
