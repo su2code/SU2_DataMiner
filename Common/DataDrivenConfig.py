@@ -57,7 +57,7 @@ class Config_NICFD(Config):
     # Fluid definition settings
     __fluid_names:list[str] = ["MM"]                    # List of fluid names used for data generation.
     __fluid_string:str="MM"                             # Fluid string for defining the abstract state in CoolProp
-    # TODO: include options for transport properties 
+
     __calc_transport_properties:bool = False
     __viscosity_model:str = DefaultSettings_NICFD.viscosity_model
     __conductivity_model:str = DefaultSettings_NICFD.conductivity_model

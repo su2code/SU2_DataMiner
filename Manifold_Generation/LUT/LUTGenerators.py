@@ -127,9 +127,7 @@ class SU2TableGenerator_NICFD:
             self._table_vars.remove(EntropicVars.VaporQuality.name)
         if not self._Config.CalcTransportProperties():
             self._table_vars.remove(EntropicVars.ViscosityDyn.name)
-            self._table_vars.remove(EntropicVars.Conductivity.name)
-            
-        self.__LoadFluidData()
+            self._table_vars.remove(EntropicVars.Conductivity.name)   
         return 
     
     def SetFDStepSize(self, val_step_size:float=3e-7):
@@ -143,8 +141,6 @@ class SU2TableGenerator_NICFD:
             raise Exception("Relative step size for finite-differences should be positive.")
         self._DataGenerator.SetFDStepSizes(val_step_size,val_step_size)
         return 
-
-    # TODO: setters for Cartesian table options 
 
     def SetCellSize_Coarse(self, cell_size_coarse:float=1e-2):
         """Specify the coarse level cell size of the table
@@ -190,20 +186,6 @@ class SU2TableGenerator_NICFD:
         """
         self._Config.SetTableDiscretization(method)
         return 
-    
-    def __LoadFluidData(self):
-        # TODO: generate coarse data grid from data generator
-        fluid_data_file = self._Config.GetOutputDir() + "/" + self._Config.GetConcatenationFileHeader() + "_full.csv"
-        with open(fluid_data_file, 'r') as fid:
-            vars = fid.readline().strip().split(',')
-        D = np.loadtxt(fluid_data_file,delimiter=',',skiprows=1)
-        fluid_data_out = np.zeros([len(D), EntropicVars.N_STATE_VARS.value])
-        for ivar, x in enumerate(vars):
-            fluid_data_out[:, EntropicVars[x].value] = D[:, ivar]
-        fluid_data_norm = self._fluid_data_scaler.fit_transform(fluid_data_out)
-   
-        
-        return fluid_data_norm
     
     def SetTableVars(self, table_vars_in:list[str]):
         """Specify the thermophysical variables to be included in the table file. All quantities are included by default. The list shoud at least contain "Density" and "Energy".
@@ -306,7 +288,6 @@ class SU2TableGenerator_NICFD:
             for i in range(len(ref_pts)):
                 ref_pt_ids.append(factory.addPoint(ref_pts[i,0], ref_pts[i, 1], 0.0))
 
-        # TODO: points with increased refinement 
         factory.synchronize()
         
         if add_sat_curve:
@@ -507,7 +488,6 @@ class SU2TableGenerator_NICFD:
         fluid_data_out = fluid_data_out[self.valid_mask,:]
         return fluid_data_out
     
-    # TODO: include derivative and transport validation methods 
     def __CartesianTableData(self):
         print("Generating table on Cartesian grid")
         Np_rho = self._Config.GetNpDensity()
@@ -828,4 +808,3 @@ class SU2TableGenerator_NICFD:
 
         return
     
-    # TODO: update configuration function
