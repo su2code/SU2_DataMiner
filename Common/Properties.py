@@ -72,8 +72,6 @@ class EntropicVars(Enum):
     VaporQuality=auto()
     N_STATE_VARS=auto()
 
-# TODO: include transport properties in entropic vars 
-
 class FGMVars(Enum):
     ProgressVariable=0
     EnthalpyTot=auto()
