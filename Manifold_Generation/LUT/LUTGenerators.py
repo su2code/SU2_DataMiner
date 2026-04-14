@@ -110,9 +110,9 @@ class SU2TableGenerator_NICFD:
                                       "Energy"]  # FGM controlling variables
     _fluid_data_scaler:MinMaxScaler= MinMaxScaler()  # Scaler for flamelet data controlling variables.
 
-    def __init__(self, Config:Config_NICFD, load_file:str=None):
+    def __init__(self, Config:Config_NICFD):
         """
-        Initiate table generator class.
+        Initiate table generator class. Settings regarding the fluid data generation and table resolution are automatically retrieved from the configuration object.
 
         :param Config: Config_FGM object.
         :type Config: Config_FGM
@@ -183,6 +183,11 @@ class SU2TableGenerator_NICFD:
         return 
     
     def SetTableDiscretization(self, method:str=DefaultSettings_NICFD.tabulation_method):
+        """Overwrite the thermodynamic state space discretization method from the configuration.
+
+        :param method: discratization method, defaults to 'cartesian'
+        :type method: str, optional
+        """
         self._Config.SetTableDiscretization(method)
         return 
     
@@ -201,6 +206,12 @@ class SU2TableGenerator_NICFD:
         return fluid_data_norm
     
     def SetTableVars(self, table_vars_in:list[str]):
+        """Specify the thermophysical variables to be included in the table file. All quantities are included by default. The list shoud at least contain "Density" and "Energy".
+        
+        :param table_vars_in: list with thermophysical variables to be included in the table.
+        :type table_vars_in: list[str]
+        :raises Exception: if any of the specified variables are not supported by SU2 DataMiner.
+        """
         self._table_vars = []
         if EntropicVars.Density.name not in table_vars_in:
             print("Density should always be included in table variables")
@@ -220,7 +231,7 @@ class SU2TableGenerator_NICFD:
             if EntropicVars.ViscosityDyn.name in table_vars_in:
                 print("Table generator not configured for transport properties, ignoring viscosity data")
             
-            
+        valid_vars = True 
         for v in table_vars_in:
             found_var = False
             for q in EntropicVars:
@@ -229,6 +240,9 @@ class SU2TableGenerator_NICFD:
                     self._table_vars.append(q.name)
             if not found_var:
                 print("Error, \"%s\" is not supported by SU2 DataMiner" % v)
+                valid_vars = False 
+        if not valid_vars:
+            raise Exception("Some specified thermophysical variables are not supported.")
         return 
     
     def __Compute2DMesh(self, points:np.ndarray[float], ref_pts:np.ndarray[float]=[],show:bool=False,sat_curve_pts:np.ndarray[float]=[]):
@@ -493,7 +507,7 @@ class SU2TableGenerator_NICFD:
         fluid_data_out = fluid_data_out[self.valid_mask,:]
         return fluid_data_out
     
-    # TODO: include derivative and transport validation methods
+    # TODO: include derivative and transport validation methods 
     def __CartesianTableData(self):
         print("Generating table on Cartesian grid")
         Np_rho = self._Config.GetNpDensity()
@@ -684,13 +698,7 @@ class SU2TableGenerator_NICFD:
         """
         write a file containing all the LuT data that can be opened with Paraview
         
-        :param connectivity: contains the node index of the created LuT
-        :param data_nodes_2d: contains the LuT nodes
-        :param MainFolder: string indicating the folder where all the outputs are saved
-        :param outpath: string indicating the name and extension of the saved file
-        :param x_vars: name of the variable that varies along the mesh x direction
-        :param y_vars: name of the variable that varies along the mesh y direction
-        :param variables: list of the saved variables, if None all the available variables are saved
+        :param file_name_out: string indicating the name and extension of the saved file
         """
 
         #x, y = self._table_nodes[:, EntropicVars.Density.value], self._table_nodes[:, EntropicVars.Energy.value]
