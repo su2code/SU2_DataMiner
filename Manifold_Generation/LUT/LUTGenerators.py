@@ -31,9 +31,24 @@ from tqdm import tqdm
 from Common.DataDrivenConfig import Config_NICFD
 import gmsh 
 from concave_hull import concave_hull, concave_hull_indexes
-import meshio 
-import matplotlib.pyplot as plt
+import meshio
+import matplotlib.pyplot as plt 
 
+def shoelace(XY:np.ndarray[float]):
+    """Shoelace algorithm for area computations
+
+    :param XY: hull node coordinates
+    :type XY: np.ndarray[float]
+    :return: area of concave hull
+    :rtype: float
+    """
+    x = XY[:,0]
+    y = XY[:,1]
+    S1 = np.sum(x*np.roll(y,-1))
+    S2 = np.sum(y*np.roll(x,-1))
+
+    area = .5*np.absolute(S1 - S2)
+    return area
 
 def FiniteDifferenceDerivative(y:np.ndarray[float], x:np.ndarray[float]):
     """Calculate second-order accurate, one-dimensional finite-difference derivatives of y with respect to x.
@@ -88,7 +103,6 @@ def FiniteDifferenceDerivative(y:np.ndarray[float], x:np.ndarray[float]):
     return dydx 
 
 class SU2TableGenerator_NICFD:
-
     _Config:Config_NICFD = None # Config_FGM class from which to read settings.
     _DataGenerator:DataGenerator_CoolProp = None 
     _savedir:str
@@ -142,6 +156,49 @@ class SU2TableGenerator_NICFD:
         self._DataGenerator.SetFDStepSizes(val_step_size,val_step_size)
         return 
 
+    def SetNpDensity(self, Np_x:int=DefaultSettings_NICFD.Np_p):
+        """Specify the number of table nodes in the x-direction of the Cartesian table.
+
+        :param Np_x: number of nodes, defaults to DefaultSettings_NICFD.Np_p
+        :type Np_x: int, optional
+        """
+        self._Config.SetNpDensity(Np_x)
+        return
+    
+    def SetNpEnergy(self, Np_y:int=DefaultSettings_NICFD.Np_temp):
+        """Specify the number of table nodes in the y-direction of the Cartesian table.
+
+        :param Np_y: number of nodes, defaults to DefaultSettings_NICFD.Np_temp
+        :type Np_y: int, optional
+        """
+        self._Config.SetNpEnergy(Np_y)
+        return
+
+    def SetDensityBounds(self, Rho_lower:float=DefaultSettings_NICFD.Rho_min, Rho_upper:float=DefaultSettings_NICFD.Rho_max):
+        """Define the density bounds of the density-energy based fluid data grid.
+
+        :param Rho_lower: lower limit density value, defaults to DefaultSettings_NICFD.Rho_min
+        :type Rho_lower: float, optional
+        :param Rho_upper: upper limit for density, defaults to DefaultSettings_NICFD.Rho_max
+        :type Rho_upper: float, optional
+        :raises Exception: if lower value for density exceeds upper value.
+        """
+        self._DataGenerator.UseAutoRange(False)
+        self._DataGenerator.SetDensityBounds(Rho_lower, Rho_upper)
+        return 
+    
+    def SetEnergyBounds(self, E_lower:float=DefaultSettings_NICFD.Energy_min, E_upper:float=DefaultSettings_NICFD.Energy_max):
+        """Define the internal energy bounds of the density-energy based fluid data grid.
+
+        :param E_lower: lower limit internal energy value, defaults to DefaultSettings_NICFD.Energy_min
+        :type E_lower: float, optional
+        :param E_upper: upper limit for internal energy, defaults to DefaultSettings_NICFD.Energy_max
+        :type E_upper: float, optional
+        :raises Exception: if lower value for internal energy exceeds upper value.
+        """
+        self._DataGenerator.UseAutoRange(False)
+        self._DataGenerator.SetEnergyBounds(E_lower, E_upper)
+        return 
     def SetCellSize_Coarse(self, cell_size_coarse:float=1e-2):
         """Specify the coarse level cell size of the table
 
@@ -283,10 +340,16 @@ class SU2TableGenerator_NICFD:
         curvloop = factory.addCurveLoop(hull_lines)
 
         # Apply refinement points
+        area_ref = shoelace(concave_hull(XY_hull, length_threshold=self._base_cell_size))
         ref_pt_ids = []
         if len(ref_pts)>0:
             for i in range(len(ref_pts)):
-                ref_pt_ids.append(factory.addPoint(ref_pts[i,0], ref_pts[i, 1], 0.0))
+                XY_with_pt = np.vstack((XY_hull, ref_pts[i,:]))
+                hull_n = concave_hull(XY_with_pt, length_threshold=self._base_cell_size)
+                area_n = shoelace(hull_n)
+                within_hull = (area_n <= area_ref)
+                if within_hull:
+                    ref_pt_ids.append(factory.addPoint(ref_pts[i,0], ref_pts[i, 1], 0.0))
 
         factory.synchronize()
         
@@ -312,25 +375,30 @@ class SU2TableGenerator_NICFD:
             valid_nans = np.logical_and(np.invert(nans_lower), np.invert(nans_upper))
             valid_pts = np.logical_and(valid_sat_curve_pts, valid_nans)
 
-            hull_DT = Delaunay(XY_hull)
+            # Clip the saturation curve points to the bounds of the thermodynamic mesh
+            
             within_hull = np.zeros(len(sat_curve_pts),dtype=np.bool)
             for i in range(len(sat_curve_pts)):
-                rhoe_sat_upper = sat_curve_rhoe_upper[i,:]
-                within_hull_upper = hull_DT.find_simplex(rhoe_sat_upper)>=0
-                rhoe_sat_lower = sat_curve_rhoe_lower[i,:]
-                within_hull_lower = hull_DT.find_simplex(rhoe_sat_lower)>=0
+                XY_with_pt = np.vstack((XY_hull, sat_curve_rhoe_upper[i,:]))
+                hull_n = concave_hull(XY_with_pt, length_threshold=self._base_cell_size)
+                area_n = shoelace(hull_n)
+                within_hull_upper = (area_n <= area_ref)
+                XY_with_pt = np.vstack((XY_hull, sat_curve_rhoe_lower[i,:]))
+                hull_n = concave_hull(XY_with_pt, length_threshold=self._base_cell_size)
+                area_n = shoelace(hull_n)
+                within_hull_lower = (area_n <= area_ref)
                 within_hull[i] = (within_hull_upper and within_hull_lower)
             valid_pts = np.logical_and(valid_pts, within_hull)
-
+            
             sat_curve_pts = sat_curve_pts[valid_pts, :]
             norm_vector = norm_vector[valid_pts, :]
 
             i = 0
             j = 1
             sat_curve_upper_pts.append(factory.addPoint(sat_curve_pts[i,0] + dx*norm_vector[i, 0],\
-                                                        sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
+                                                        sat_curve_pts[i,1] + dx*norm_vector[i, 1],0))
             sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
-                                                        sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
+                                                        sat_curve_pts[i,1] - dx*norm_vector[i, 1],0))
             dists = []
             while j < len(sat_curve_pts):
                 dist = np.sqrt(np.sum(np.power(sat_curve_pts[j,:] - sat_curve_pts[i,:],2)))
@@ -341,9 +409,9 @@ class SU2TableGenerator_NICFD:
                     j += 1 
                     dists.append(dist)
                     sat_curve_upper_pts.append(factory.addPoint(sat_curve_pts[i,0] + dx*norm_vector[i, 0],\
-                                                                sat_curve_pts[i,1] + dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
+                                                                sat_curve_pts[i,1] + dx*norm_vector[i, 1],0))
                     sat_curve_lower_pts.append(factory.addPoint(sat_curve_pts[i,0] - dx*norm_vector[i, 0],\
-                                                                sat_curve_pts[i,1] - dx*norm_vector[i, 1],0, 0.6*self._refined_cell_size))
+                                                                sat_curve_pts[i,1] - dx*norm_vector[i, 1],0))
             sat_curve_connecting_lines = []
             for i in range(len(sat_curve_upper_pts)):
                 sat_curve_connecting_lines.append(factory.addLine(sat_curve_lower_pts[i], sat_curve_upper_pts[i]))
@@ -372,9 +440,8 @@ class SU2TableGenerator_NICFD:
         # Apply conditional refinement, where the refined cell size is applied in proximity to the refinement points
         factory.synchronize()
         threshold_fields = []
-        dist_field_ref_pt = gmsh.model.mesh.field.add("Distance")
-        gmsh.model.mesh.field.setNumbers(dist_field_ref_pt, "PointsList", ref_pt_ids)
-        gmsh.model.mesh.field.setNumber(dist_field_ref_pt, "Sampling", 100)
+        dist_field_ref_pt = gmsh.model.mesh.field.add("Attractor")
+        gmsh.model.mesh.field.setNumbers(dist_field_ref_pt, "NodesList", ref_pt_ids)
         t_field_ref_pt = gmsh.model.mesh.field.add("Threshold")
         gmsh.model.mesh.field.setNumber(t_field_ref_pt, "InField", dist_field_ref_pt)
         gmsh.model.mesh.field.setNumber(t_field_ref_pt, "SizeMin", self._refined_cell_size)
@@ -616,6 +683,7 @@ class SU2TableGenerator_NICFD:
 
         self.__CartesianTableData()
         self._table_nodes = np.column_stack(tuple(self.state_data[:,:,i][self.valid_mask].flatten() for i in range(EntropicVars.N_STATE_VARS.value)))
+        self._fluid_data_scaler = MinMaxScaler()
         self._fluid_data_scaler.fit(self._table_nodes)
 
         # Load initial fluid data and scale it
@@ -627,8 +695,10 @@ class SU2TableGenerator_NICFD:
             self._table_nodes = np.column_stack(tuple(self.state_data[:,:,i][self.valid_mask].flatten() for i in range(EntropicVars.N_STATE_VARS.value)))
             
             fluid_data_norm = self._fluid_data_scaler.fit_transform(self._table_nodes)
-
-            sat_curve_pts_norm = self.__CreateSaturationCurve()
+            
+            sat_curve_pts_norm = []
+            if self._Config.TwoPhase():
+                sat_curve_pts_norm = self.__CreateSaturationCurve()
 
             # Generate initial coarse table of fluid data
             rhoe_norm = fluid_data_norm[:, [EntropicVars.Density.value, EntropicVars.Energy.value]]
@@ -653,7 +723,8 @@ class SU2TableGenerator_NICFD:
             # Extract triangulation, hull nodes, and table data
             Tria = DT.simplices 
             HullNodes = concave_hull_indexes(fluid_data_norm_ref[:, [EntropicVars.Density.value,EntropicVars.Energy.value]])
-
+            #plt.triplot(DT.points[:,0],DT.points[:,1], Tria)
+            #plt.show()
             self._table_nodes = fluid_data_ref 
             self._table_connectivity = Tria 
             self._table_hullnodes = HullNodes
