@@ -785,7 +785,7 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         eos_fluid = "%s::%s" % (self._Config.GetEquationOfState(), self._Config.GetFluid())
         ptriple = CP.PropsSI("PTRIPLE", eos_fluid)
         pcrit = CP.PropsSI("PCRIT", eos_fluid)
-        Psat = np.linspace(ptriple, pcrit, 2000)
+        Psat = np.linspace(ptriple, pcrit, 4000)
 
         rhoLiq=CP.PropsSI("D","P",Psat,"Q",0,eos_fluid)
         rhoVap=CP.PropsSI("D","P",Psat,"Q",1,eos_fluid)
