@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from su2dataminer.config import Config_NICFD
 from su2dataminer.manifold import SU2TableGenerator_NICFD
 
