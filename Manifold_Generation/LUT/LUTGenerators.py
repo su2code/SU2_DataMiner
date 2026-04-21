@@ -821,7 +821,7 @@ class SU2TableGenerator_NICFD:
         """
 
         if output_filepath:
-            file_out = output_filepath
+            file_out = output_filepath + ".drg"
         else:
             file_out = self._savedir + "/LUT_"+self._Config.GetConfigName()+".drg"
 
