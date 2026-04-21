@@ -19,7 +19,7 @@
 # Description:                                                                                |
 #  Default settings/names/properties for the various steps within the DataMiner workflow.     |                                                                          
 #                                                                                             |  
-# Version: 3.0.0                                                                              |
+# Version: 3.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 

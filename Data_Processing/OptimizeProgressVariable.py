@@ -20,7 +20,7 @@
 #  Class for optimizing the definition for the progress variable for a given set of flamelet  |
 #  data.                                                                                      |
 #                                                                                             |
-# Version: 3.0.0                                                                              |
+# Version: 3.1.0                                                                              |
 #                                                                                             |
 #=============================================================================================#
 
