@@ -3,7 +3,7 @@
 Set-up and Requirements
 =======================
 
-*SU2 DataMiner* is an open-source, python-based software suite that is available on `GitHub <https://github.com/Propulsion-Power-TU-Delft/SU2_DataMiner.git>`_. 
+*SU2 DataMiner* is an open-source, python-based software suite that is available on `GitHub <https://github.com/su2code/SU2_DataMiner.git>`_. 
 
 .. important::
 
@@ -32,7 +32,7 @@ The *SU2 DataMiner* source code can be downloaded from GitHub by cloning the rep
 
 .. code-block::
 
-    >>> git clone https://github.com/Propulsion-Power-TU-Delft/SU2_DataMiner.git <PATH_TO_SOURCE>
+    >>> git clone https://github.com/su2code/SU2_DataMiner.git <PATH_TO_SOURCE>
 
 
 where `<PATH_TO_SOURCE>` refers to the target location where the *SU2 DataMiner* source code will be stored. 
