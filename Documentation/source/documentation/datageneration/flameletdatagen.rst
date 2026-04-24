@@ -11,11 +11,24 @@ Generation of Flamelet Data
 
 This page provides the documentation on the methods used for generating flamelet data with *SU2 DataMiner*. 
 
+.. _flamelet_data_gen_workflow: 
+
+Process Diagram 
+---------------
+
+# TODO: show solution diagram 
+
+# TODO: describe steps 
+
+# TODO: describe which data are saved and how to retrieve dependent variables.
 
 .. _flameletgen:
 
 Flamelet Calculations
 ---------------------
+
+# TODO: solution processes for each flamelet type 
+
 
 .. autofunction:: Data_Generation.DataGenerator_FGM.DataGenerator_Cantera.ComputeFreeFlames
 
