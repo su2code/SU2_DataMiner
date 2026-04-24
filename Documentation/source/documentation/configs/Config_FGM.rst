@@ -196,6 +196,8 @@ The functions listed in this section allow the user to access the preferential d
 
 The preferential diffusion scalars are calculated when preferential diffusion is enabled in the *SU2 DataMiner* configuration, which can be done with the following functions. 
 
+# TODO: write preferential diffusion scalar equations 
+
 .. autofunction:: Common.DataDrivenConfig.Config_FGM.EnablePreferentialDiffusion
 
 .. autofunction:: Common.DataDrivenConfig.Config_FGM.PreferentialDiffusion  
