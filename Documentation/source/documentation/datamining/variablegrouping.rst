@@ -20,3 +20,14 @@ Process Diagram
 
 # TODO: describe affinity selection algorithm 
 
+.. _grouping_method_parameters:
+
+Grouping Algorithm Settings 
+---------------------------
+
+# TODO: setters for selection algorithm parameters 
+
+Input-Output Settings
+---------------------
+
+# TODO: methods for accessing group information 
