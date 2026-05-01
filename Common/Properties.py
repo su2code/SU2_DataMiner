@@ -216,6 +216,22 @@ class DefaultSettings_FGM(DefaultProperties):
     
     affinity_threshold:float = 0.7
     output_file_header:str = "flamelet_data"
+
+    # Grid refinement criteria for Cantera flame solvers
+    freeflame_refine_ratio:float = 2.0
+    freeflame_refine_slope:float = 0.025
+    freeflame_refine_curve:float = 0.025
+    freeflame_refine_prune:float = 0.01
+
+    burnerflame_refine_ratio:float = 3.0
+    burnerflame_refine_slope:float = 0.02
+    burnerflame_refine_curve:float = 0.02
+    burnerflame_refine_prune:float = 0.01
+
+    counterflame_refine_ratio:float = 3.0
+    counterflame_refine_slope:float = 0.04
+    counterflame_refine_curve:float = 0.06
+    counterflame_refine_prune:float = 0.02
     boundary_file_header:str = "boundary_data"
     config_type:str = "FlameletAI"
 

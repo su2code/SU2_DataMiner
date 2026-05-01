@@ -131,47 +131,88 @@ class SU2TableGenerator_NICFD:
         :param Config: Config_FGM object.
         :type Config: Config_FGM
         """
-        self._Config = Config 
-        self._controlling_variables= [c for c in self._Config.GetControllingVariables()]
 
-        self._DataGenerator = DataGenerator_CoolProp(self._Config)
-        entropic_vars = [a.name for a in EntropicVars][:-1]
-        self._table_vars = entropic_vars.copy()
-        if not self._Config.TwoPhase():
-            self._table_vars.remove(EntropicVars.VaporQuality.name)
-        if not self._Config.CalcTransportProperties():
-            self._table_vars.remove(EntropicVars.ViscosityDyn.name)
-            self._table_vars.remove(EntropicVars.Conductivity.name)   
-        return 
-    
-    def SetFDStepSize(self, val_step_size:float=3e-7):
-        """Set the relative step size for density and static energy for evaluating fluid properties in the two-phase region.
+        if load_file:
+            # Load an existing TableGenerator object.
+            with open(load_file, "rb") as fid:
+                loaded_table_generator = pickle.load(fid)
+            self.__dict__ = loaded_table_generator.__dict__.copy()
+        else:
+            # Create new TableGenerator object.
+            self._Config = Config
 
-        :param val_step_size: relative finite-difference step size, defaults to 3e-7
-        :type val_step_size: float, optional
-        :raises Exception: if the provided value is negative or zero.
-        """
-        if val_step_size <= 0:
-            raise Exception("Relative step size for finite-differences should be positive.")
-        self._DataGenerator.SetFDStepSizes(val_step_size,val_step_size)
-        return 
+            self.__DefineFluidDataInterpolator()
 
-    def SetNpDensity(self, Np_x:int=DefaultSettings_NICFD.Np_p):
-        """Specify the number of table nodes in the x-direction of the Cartesian table.
+        self._savedir = self._Config.GetOutputDir()
 
-        :param Np_x: number of nodes, defaults to DefaultSettings_NICFD.Np_p
-        :type Np_x: int, optional
-        """
-        self._Config.SetNpDensity(Np_x)
-        return
-    
-    def SetNpEnergy(self, Np_y:int=DefaultSettings_NICFD.Np_temp):
-        """Specify the number of table nodes in the y-direction of the Cartesian table.
+        self._table_nodes, self.table_data, self._table_connectivity, self._table_hullnodes = self.__ComputeCurvature()
 
-        :param Np_y: number of nodes, defaults to DefaultSettings_NICFD.Np_temp
-        :type Np_y: int, optional
-        """
-        self._Config.SetNpEnergy(Np_y)
+        fig = plt.figure()
+        ax = plt.axes(projection='3d')
+        ax.plot3D(self._table_nodes[:,0],self._table_nodes[:,1], self.table_data[:, self._Fluid_Variables.index("d2sdrho2")],'k.')
+        plt.show()
+        self.table_vars = ['s','dsdrho_e','dsde_rho','d2sdrho2','d2sdedrho','d2sde2']
+
+        self.WriteTableFile(self._Config.GetOutputDir()+"/LUT_"+self._Config.GetConfigName()+".drg")
+
+    def __DefineFluidDataInterpolator(self):
+        print("Configuring KD-tree for most accurate lookups")
+
+        print("Loading fluid data...")
+        # Define scaler for FGM controlling variables.
+        full_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_full.csv"
+        with open(full_data_file,'r') as fid:
+            self._Fluid_Variables = fid.readline().strip().split(',')
+        D_full = np.loadtxt(full_data_file,delimiter=',',skiprows=1)
+        self._scaler = MinMaxScaler()
+        self.CV_full = np.vstack(tuple(D_full[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T
+        self.__min_CV, self.__max_CV = np.min(self.CV_full,axis=0), np.max(self.CV_full,axis=0)
+
+        CV_full_scaled = self._scaler.fit_transform(self.CV_full)
+
+        # Exctract train and test data
+        train_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_full.csv"
+        test_data_file = self._Config.GetOutputDir()+"/"+self._Config.GetConcatenationFileHeader()+"_test.csv"
+
+        var_to_test_for = "d2sdrho2"
+
+        D_train = np.loadtxt(train_data_file,delimiter=',',skiprows=1)
+        D_test = np.loadtxt(test_data_file,delimiter=',',skiprows=1)
+
+        CV_train = np.vstack(tuple(D_train[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T
+        CV_test = np.vstack(tuple(D_test[:, self._Fluid_Variables.index(c)] for c in self._controlling_variables)).T
+
+        CV_train_scaled = self._scaler.transform(CV_train)
+        CV_test_scaled = self._scaler.transform(CV_test)
+
+        PPV_test = D_test[:, self._Fluid_Variables.index(var_to_test_for)]
+        print("Done!")
+
+        self._lookup_tree = Invdisttree(X=CV_train_scaled,z=D_train)
+
+        print("Searching for best tree parameters...")
+        # Do brute-force search to get the optimum number of nearest neighbors and distance power.
+        n_near_range = range(1, 20)
+        p_range = range(2, 6)
+        RMS_ppv = np.zeros([len(n_near_range), len(p_range)])
+        for i in tqdm(range(len(n_near_range))):
+            for j in range(len(p_range)):
+                PPV_predicted = self._lookup_tree(q=CV_test_scaled, nnear=n_near_range[i], p=p_range[j])[:, self._Fluid_Variables.index(var_to_test_for)]
+                rms_local = mean_squared_error(y_true=PPV_test, y_pred=PPV_predicted)
+                RMS_ppv[i,j] = rms_local
+        [imin,jmin] = divmod(RMS_ppv.argmin(), RMS_ppv.shape[1])
+        self._n_near = n_near_range[imin]
+        self._p_fac = p_range[jmin]
+        print("Done!")
+        print("Best found number of nearest neighbors: "+str(self._n_near))
+        print("Best found distance power: "+str(self._p_fac))
+
+    def __EvaluateFluidInterpolator(self, CV_unscaled:np.ndarray):
+        CV_scaled = self._scaler.transform(CV_unscaled)
+        data_interp = self._lookup_tree(q=CV_scaled,nnear=self._n_near,p=self._p_fac)
+        return data_interp
+
+    def ComputeTableMesh(self):
         return
 
     def SetDensityBounds(self, Rho_lower:float=DefaultSettings_NICFD.Rho_min, Rho_upper:float=DefaultSettings_NICFD.Rho_max):

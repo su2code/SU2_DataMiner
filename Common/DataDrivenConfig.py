@@ -835,6 +835,22 @@ class Config_FGM(Config):
     __Le_avg_eq_ratio:float = None
     __Le_avg_T_unb:float = None
 
+    # Grid refinement criteria for Cantera flame solvers
+    __freeflame_refine_ratio:float = DefaultSettings_FGM.freeflame_refine_ratio
+    __freeflame_refine_slope:float = DefaultSettings_FGM.freeflame_refine_slope
+    __freeflame_refine_curve:float = DefaultSettings_FGM.freeflame_refine_curve
+    __freeflame_refine_prune:float = DefaultSettings_FGM.freeflame_refine_prune
+
+    __burnerflame_refine_ratio:float = DefaultSettings_FGM.burnerflame_refine_ratio
+    __burnerflame_refine_slope:float = DefaultSettings_FGM.burnerflame_refine_slope
+    __burnerflame_refine_curve:float = DefaultSettings_FGM.burnerflame_refine_curve
+    __burnerflame_refine_prune:float = DefaultSettings_FGM.burnerflame_refine_prune
+
+    __counterflame_refine_ratio:float = DefaultSettings_FGM.counterflame_refine_ratio
+    __counterflame_refine_slope:float = DefaultSettings_FGM.counterflame_refine_slope
+    __counterflame_refine_curve:float = DefaultSettings_FGM.counterflame_refine_curve
+    __counterflame_refine_prune:float = DefaultSettings_FGM.counterflame_refine_prune
+
     def __init__(self, load_file:str=None):
         """Class constructor
         """
@@ -1407,6 +1423,112 @@ class Config_FGM(Config):
         self.__generate_counterflames = input 
         return
     
+    def SetFreeFlameCriteria(self, ratio:float=DefaultSettings_FGM.freeflame_refine_ratio,
+                             slope:float=DefaultSettings_FGM.freeflame_refine_slope,
+                             curve:float=DefaultSettings_FGM.freeflame_refine_curve,
+                             prune:float=DefaultSettings_FGM.freeflame_refine_prune):
+        """Set the grid refinement criteria for adiabatic free-flame computations.
+
+        :param ratio: Maximum grid size ratio between adjacent cells, defaults to 2.0
+        :type ratio: float
+        :param slope: Maximum relative change in solution slope, defaults to 0.025
+        :type slope: float
+        :param curve: Maximum relative change in solution curvature, defaults to 0.025
+        :type curve: float
+        :param prune: Threshold below which grid points are removed, defaults to 0.01
+        :type prune: float
+        """
+        self.__freeflame_refine_ratio = ratio
+        self.__freeflame_refine_slope = slope
+        self.__freeflame_refine_curve = curve
+        self.__freeflame_refine_prune = prune
+        return
+
+    def GetFreeFlameCriteria(self):
+        """Get the grid refinement criteria for adiabatic free-flame computations.
+
+        :return: tuple of (ratio, slope, curve, prune)
+        :rtype: tuple[float, float, float, float]
+        """
+        return (self.__freeflame_refine_ratio, self.__freeflame_refine_slope,
+                self.__freeflame_refine_curve, self.__freeflame_refine_prune)
+
+    def SetBurnerFlameCriteria(self, ratio:float=DefaultSettings_FGM.burnerflame_refine_ratio,
+                               slope:float=DefaultSettings_FGM.burnerflame_refine_slope,
+                               curve:float=DefaultSettings_FGM.burnerflame_refine_curve,
+                               prune:float=DefaultSettings_FGM.burnerflame_refine_prune):
+        """Set the grid refinement criteria for burner-stabilized flame computations.
+
+        :param ratio: Maximum grid size ratio between adjacent cells, defaults to 3.0
+        :type ratio: float
+        :param slope: Maximum relative change in solution slope, defaults to 0.02
+        :type slope: float
+        :param curve: Maximum relative change in solution curvature, defaults to 0.02
+        :type curve: float
+        :param prune: Threshold below which grid points are removed, defaults to 0.01
+        :type prune: float
+        """
+        self.__burnerflame_refine_ratio = ratio
+        self.__burnerflame_refine_slope = slope
+        self.__burnerflame_refine_curve = curve
+        self.__burnerflame_refine_prune = prune
+        return
+
+    def GetBurnerFlameCriteria(self):
+        """Get the grid refinement criteria for burner-stabilized flame computations.
+
+        :return: tuple of (ratio, slope, curve, prune)
+        :rtype: tuple[float, float, float, float]
+        """
+        return (self.__burnerflame_refine_ratio, self.__burnerflame_refine_slope,
+                self.__burnerflame_refine_curve, self.__burnerflame_refine_prune)
+
+    def SetCounterFlameCriteria(self, ratio:float=DefaultSettings_FGM.counterflame_refine_ratio,
+                                slope:float=DefaultSettings_FGM.counterflame_refine_slope,
+                                curve:float=DefaultSettings_FGM.counterflame_refine_curve,
+                                prune:float=DefaultSettings_FGM.counterflame_refine_prune):
+        """Set the grid refinement criteria for counter-flow diffusion flame computations.
+
+        :param ratio: Maximum grid size ratio between adjacent cells, defaults to 3.0
+        :type ratio: float
+        :param slope: Maximum relative change in solution slope, defaults to 0.04
+        :type slope: float
+        :param curve: Maximum relative change in solution curvature, defaults to 0.06
+        :type curve: float
+        :param prune: Threshold below which grid points are removed, defaults to 0.02
+        :type prune: float
+        """
+        self.__counterflame_refine_ratio = ratio
+        self.__counterflame_refine_slope = slope
+        self.__counterflame_refine_curve = curve
+        self.__counterflame_refine_prune = prune
+        return
+
+    def GetCounterFlameCriteria(self):
+        """Get the grid refinement criteria for counter-flow diffusion flame computations.
+
+        :return: tuple of (ratio, slope, curve, prune)
+        :rtype: tuple[float, float, float, float]
+        """
+        return (self.__counterflame_refine_ratio, self.__counterflame_refine_slope,
+                self.__counterflame_refine_curve, self.__counterflame_refine_prune)
+
+    def PrintRefineCriteria(self):
+        """Print the active grid refinement criteria for all enabled flame types."""
+        print("Grid refinement criteria:")
+        if self.__generate_freeflames:
+            print("  Free flame:    ratio=%.4g  slope=%.4g  curve=%.4g  prune=%.4g" % (
+                self.__freeflame_refine_ratio, self.__freeflame_refine_slope,
+                self.__freeflame_refine_curve, self.__freeflame_refine_prune))
+        if self.__generate_burnerflames:
+            print("  Burner flame:  ratio=%.4g  slope=%.4g  curve=%.4g  prune=%.4g" % (
+                self.__burnerflame_refine_ratio, self.__burnerflame_refine_slope,
+                self.__burnerflame_refine_curve, self.__burnerflame_refine_prune))
+        if self.__generate_counterflames:
+            print("  Counter flame: ratio=%.4g  slope=%.4g  curve=%.4g  prune=%.4g" % (
+                self.__counterflame_refine_ratio, self.__counterflame_refine_slope,
+                self.__counterflame_refine_curve, self.__counterflame_refine_prune))
+
     def GenerateFreeFlames(self):
         """
         Whether the manifold data contains adiabatic free-flame data.
