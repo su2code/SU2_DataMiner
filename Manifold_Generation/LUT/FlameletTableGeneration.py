@@ -664,30 +664,31 @@ class SU2TableGenerator_FGM:
 
         fid.close()
         return 
-    def WriteOutParaview(self,file_name_out:str="vtk_table"):
-        """
-        write a file containing all the LuT data that can be opened with Paraview
+    def WriteOutParaview(self,file_name_out:str="table_level"):
+        """Save table level data invtk format
         
-        :param file_name_out: string indicating the name and extension of the saved file
+        :param file_name_out: output file header.
+        :type file_name_out: str 
         """
+
         if len(self._user_vars) > 0:
             table_vars = self._user_vars.copy()
         else:
             table_vars = self._Flamelet_Variables.copy()
 
-        for iLevel in tqdm(range(len(self._table_nodes))):
+        for iLevel in range(len(self._table_nodes)):
 
+            # Create 2D connectivity of table level
             cv_level = self._table_nodes[iLevel]
-
             pts = self._scaler.transform(cv_level)
-
             conn = np.asarray(self._table_connectivity[iLevel], dtype=np.int64)
             
-            
+            # Retrieve table data
             point_data = {}
             for var in table_vars:
                 point_data[var] = np.asarray(self._table_data[iLevel][:, self._Flamelet_Variables.index(var)])
 
+            # Generate 2D mesh ready for output
             mesh = meshio.Mesh(
                 points=pts,
                 cells=[("triangle", conn)],
@@ -799,15 +800,18 @@ class SU2TableGenerator_FGM:
         return idx_ref 
     
     def __Compute2DMesh(self, XY_hull:np.ndarray, XY_refinement:np.ndarray, val_mixfrac_norm:float, level_area:float):
-        """
-        Generate a 2D mesh for the current table level.
+        """Generate 2D mesh of thermochemical state space for a table level.
 
-        :param XY_hull: Array containing normalized pv and enth coordinates of the outline of the table level.
-        :type XY_hull: NDArray
-        :param XY_refinement: Array containing normalized pv and enth coordinates where refinement should be applied.
-        :type XY_refinement: NDArray
-        :return: mesh nodes of the 2D table mesh.
-        :rtype: NDArray
+        :param XY_hull: Progress variable-total enthalpy locations of the table level outline.
+        :type XY_hull: np.ndarray
+        :param XY_refinement: Locations where refinement is to be applied.
+        :type XY_refinement: np.ndarray
+        :param val_mixfrac_norm: Scaled value of the mixture fraction
+        :type val_mixfrac_norm: float
+        :param level_area: area of the table level.
+        :type level_area: float
+        :return: table nodes, connectivity, boundary indices, interpolated flamelet data
+        :rtype: tuple
         """
 
         def meshgeom(base_cell_size:float, refined_cell_size:float, refinement_radius:float):
@@ -875,7 +879,7 @@ class SU2TableGenerator_FGM:
                 tri_tags = np.asarray(nodes_flat, dtype=np.int64).reshape(-1, 3)
                 tris.append(self.__map_tags(tri_tags, nodeTags_sorted,order).reshape(-1, 3))
 
-            tris = np.vstack(tris)# if tris else np.zeros((0, 3), dtype=np.int64)
+            tris = np.vstack(tris)
 
             return nodes, tris, hullTags
         
@@ -934,19 +938,6 @@ class SU2TableGenerator_FGM:
         pos = np.searchsorted(nodeTags_sorted, tags)
         return order[pos]
     
-    def __GetStochMixtureFraction(self):
-        fuel_definition = self._Config.GetFuelDefinition()
-        fuel_weights = self._Config.GetFuelWeights()
-        fuel_string = ",".join(fuel_definition[i] + ":" + str(fuel_weights[i]) for i in range(len(fuel_definition)))
-
-        ox_definition = self._Config.GetOxidizerDefinition()
-        ox_weights = self._Config.GetOxidizerWeights()
-        ox_string = ",".join(ox_definition[i] + ":" + str(ox_weights[i]) for i in range(len(ox_definition)))
-
-        self._Config.gas.set_equivalence_ratio(1.0, fuel_string, ox_string)
-        mixfrac_stoch = self._Config.gas.mixture_fraction(fuel_string, ox_string)
-        return mixfrac_stoch
-    
     def SaveTableGenerator(self, file_name:str):
         """Save the current TableGenerator object settings such that subsequent tables can be
         generated faster.
@@ -957,15 +948,3 @@ class SU2TableGenerator_FGM:
         file = open(self._savedir + "/"+file_name +".tgen", "wb")
         pickle.dump(self, file)
         file.close()
-
-    def Inverse_LookUp_T(self, val_pv, val_mixfrac, val_T, val_h_start=2000):
-        CV_array = np.array([[val_pv, val_h_start, val_mixfrac]])
-        delta = 1e32
-        while np.abs(delta) > 1e-2:
-            Q_interp = self.__EvaluateFlameletInterpolator(CV_array)
-            val_T_interp = Q_interp[0, self._Flamelet_Variables.index("Temperature")]
-            val_cp_interp  = Q_interp[0, self._Flamelet_Variables.index("Cp")]
-            delta = val_T - val_T_interp
-            delta_h = val_cp_interp * delta 
-            CV_array[0,1] += delta_h
-        return CV_array[0,1]
