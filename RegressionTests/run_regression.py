@@ -65,7 +65,15 @@ def main():
     FGM_training.test_files=["architectures_Group1/Worker_0/Model_0/TrainingHistory.csv"]
     test_list_FGM.append(FGM_training)
 
-    
+    hydrogen_table = TestCase("H2 table")
+    hydrogen_table.config_dir="TableGeneration/FGM/hydrogen_table_3D/"
+    hydrogen_table.config_file = ""
+    hydrogen_table.timeout=800
+    hydrogen_table.exec_command="./generate_table.py"
+    hydrogen_table.reference_files=["LUT_test.ref"]
+    hydrogen_table.test_files=["LUT_test.drg"]
+    test_list_FGM.append(hydrogen_table)
+
     unittest_mixturefraction = TestCase("Mixture fraction")
     unittest_mixturefraction.config_dir = "Physics/MixtureFraction/"
     unittest_mixturefraction.config_file = ""

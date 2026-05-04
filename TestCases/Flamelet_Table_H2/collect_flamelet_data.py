@@ -1,17 +1,36 @@
-# Collect flamelet data into data sets for table generation
-from Common.DataDrivenConfig import FlameletAIConfig 
-from Data_Processing.collectFlameletData import FlameletConcatenator
+#!/usr/bin/env python3
 
-Config = FlameletAIConfig("TableGeneration.cfg")
+###############################################################################################
+#       #      _____ __  _____      ____        __        __  ____                   #        #
+#       #     / ___// / / /__ \    / __ \____ _/ /_____ _/  |/  (_)___  ___  _____   #        #
+#       #     \__ \/ / / /__/ /   / / / / __ `/ __/ __ `/ /|_/ / / __ \/ _ \/ ___/   #        #
+#       #    ___/ / /_/ // __/   / /_/ / /_/ / /_/ /_/ / /  / / / / / /  __/ /       #        #
+#       #   /____/\____//____/  /_____/\__,_/\__/\__,_/_/  /_/_/_/ /_/\___/_/        #        #
+#       #                                                                            #        #
+###############################################################################################
 
+########################## FILE NAME: collect_flamelet_data.py ################################
+#=============================================================================================#
+# author: Evert Bunschoten                                                                    |
+#    :PhD Candidate ,                                                                         |
+#    :Flight Power and Propulsion                                                             |
+#    :TU Delft,                                                                               |
+#    :The Netherlands                                                                         |
+#                                                                                             |
+#                                                                                             |
+# Description:                                                                                |
+#   Accumulate flamelet data for hydrogen FGM tabulation test case.                           |
+# Version: 3.1.0                                                                              |
+#                                                                                             |
+#=============================================================================================#
+from su2dataminer.config import Config_FGM
+from su2dataminer.process_data import FlameletConcatenator
+
+Config = Config_FGM("TableGeneration.cfg")
+
+# Interpolate 200 points per flamelet
 Concat = FlameletConcatenator(Config)
-
-# Include NOx reaction rates and heat release in flamelet data set 
-Concat.SetAuxilarySpecies(["H2"])
-Concat.SetLookUpVars(["Heat_Release"])
-
-# Apply source term and chemical equilibrium data corrections for table generation.
-Concat.WriteLUTData(True)
+Concat.SetNFlameletNodes(200)
 
 # Read and concatenate flamelet data
 Concat.ConcatenateFlameletData()
