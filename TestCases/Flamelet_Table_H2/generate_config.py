@@ -1,15 +1,15 @@
 
-from Common.DataDrivenConfig import FlameletAIConfig 
+from su2dataminer.config import Config_FGM
 import os 
 
-Config = FlameletAIConfig()
+Config = Config_FGM()
 Config.SetConfigName("TableGeneration")
 
 # Hydrogen-air flamelets with equivalence ratio between 0.3 and 0.7
 Config.SetFuelDefinition(fuel_species=["H2"],fuel_weights=[1.0])
 Config.SetReactionMechanism('h2o2.yaml')
-Config.SetMixtureBounds(0.3, 0.7)
-Config.SetNpMix(80)
+Config.SetMixtureBounds(0.3, 1.0)
+Config.SetNpMix(30)
 Config.SetUnbTempBounds(300, 800)
 Config.SetNpTemp(30)
 
