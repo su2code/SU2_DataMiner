@@ -71,6 +71,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
     __translate_to_matlab:bool = False # Save a copy of the flamelet data file in Matlab table generator format
 
     __loglevel:int = 0  # Cantera solver loglevel (0=silent, 1=normal, 2=verbose)
+    m_dot_free_flame:float = None  # adiabatic mass flux, set by ComputeFreeFlames; None until a free flame converges
 
     __run_freeflames:bool = DefaultSettings_FGM.include_freeflames      # Run adiabatic flame computations
     __run_burnerflames:bool = DefaultSettings_FGM.include_burnerflames    # Run burner stabilized flame computations
@@ -374,7 +375,11 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
         # Try to solve the flamelet solution. If solution diverges, move on to next flamelet.
         try:
-            flame.solve(loglevel=self.__loglevel, refine_grid=True, auto=False)
+            # Cold-start the first flame with Cantera's automatic continuation
+            # (auto=True) so it converges robustly from the hand-placed guess;
+            # warm-started subsequent flames reuse prior state and solve fast
+            # with a single Newton pass (auto=False).
+            flame.solve(loglevel=self.__loglevel, refine_grid=True, auto=(prev_flame is None))
             
             # Computing mass flow rate for later burner flame evaluation
             self.m_dot_free_flame = flame.velocity[0]*flame.density[0]
@@ -729,17 +734,26 @@ class DataGenerator_Cantera(DataGenerator_Base):
             if not self.__run_freeflames:
                 self.ComputeFreeFlames(mix_status=mix_status, T_ub=self.__T_unburnt_lower, i_freeflame=0)
 
-            # Define mass flow rate range. Geometric (log) spacing clustered toward
-            # LOW mdot so the deep heat-loss / low-enthalpy branch is densely sampled
-            # (linear spacing wastes points on the near-adiabatic end where h barely
-            # moves). Lean-H2 burner flames stay lit down to ~3e-3*mdot_ad (h~-780
-            # kJ/kg at phi=0.5) before blow-off; below that the cold corner is filled
-            # by the cooled-equilibrium branch.
-            m_dot_range = np.geomspace(self.m_dot_free_flame, 1e-3*self.m_dot_free_flame, self.__n_flamelets+1)
-            m_dot_range = m_dot_range[:-1]
+            # Burner flames are anchored to the adiabatic mass flux. If no free flame
+            # converged for this mixture, m_dot_free_flame is still None -> skip the
+            # burner sweep with a clear message instead of crashing on geomspace
+            # (equilibrium data below does not depend on the free flame and still runs).
+            if self.m_dot_free_flame is None:
+                print("No converged free flame for %s %.6g -- skipping burner flames "
+                      "(no reference mass flux)." % (
+                          "phi" if self.__define_equivalence_ratio else "mixfrac", mix_status))
+            else:
+                # Define mass flow rate range. Geometric (log) spacing clustered toward
+                # LOW mdot so the deep heat-loss / low-enthalpy branch is densely sampled
+                # (linear spacing wastes points on the near-adiabatic end where h barely
+                # moves). Lean-H2 burner flames stay lit down to ~3e-3*mdot_ad (h~-780
+                # kJ/kg at phi=0.5) before blow-off; below that the cold corner is filled
+                # by the cooled-equilibrium branch.
+                m_dot_range = np.geomspace(self.m_dot_free_flame, 1e-3*self.m_dot_free_flame, self.__n_flamelets+1)
+                m_dot_range = m_dot_range[:-1]
 
-            # Generate and safe adiabatic flamelet data.
-            self.ComputeBurnerFlames(mix_status=mix_status, m_dot=m_dot_range)
+                # Generate and safe adiabatic flamelet data.
+                self.ComputeBurnerFlames(mix_status=mix_status, m_dot=m_dot_range)
 
         # Generate chemical equilibrium data
         if self.__run_equilibrium:
