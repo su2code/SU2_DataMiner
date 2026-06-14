@@ -80,6 +80,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
     __run_burnerflames:bool = DefaultSettings_FGM.include_burnerflames    # Run burner stabilized flame computations
     __run_equilibrium:bool = DefaultSettings_FGM.include_equilibrium    # Run chemical equilibrium computations
     __run_counterflames:bool = DefaultSettings_FGM.include_counterflames   # Run counter-flow diffusion flamelet simulations.
+    __counterflow_fixed_strain:bool  = DefaultSettings_FGM.counterflow_fixed_strain  # Fixed-strain mode for counterflow flames.
+    __counterflow_strain_rate:float  = DefaultSettings_FGM.counterflow_strain_rate   # Global strain rate [1/s] for fixed-strain mode.
 
     __u_fuel:float = 1.0       # Fuel stream velocity in counter-flow diffusion flame.
     __u_oxidizer:float = None   # Oxidizer stream velocity in counter-flow diffusion flame.
@@ -134,6 +136,13 @@ class DataGenerator_Cantera(DataGenerator_Base):
         self.__run_burnerflames = self._Config.GenerateBurnerFlames()
         self.__run_equilibrium = self._Config.GenerateEquilibrium()
         self.__run_counterflames = self._Config.GenerateCounterFlames()
+        self.__counterflow_fixed_strain = getattr(self._Config, '_Config_FGM__counterflow_fixed_strain', DefaultSettings_FGM.counterflow_fixed_strain)
+        self.__counterflow_strain_rate  = getattr(self._Config, '_Config_FGM__counterflow_strain_rate',  DefaultSettings_FGM.counterflow_strain_rate)
+        try:
+            self.__counterflow_fixed_strain = self._Config.GetCounterFlowFixedStrain()
+            self.__counterflow_strain_rate  = self._Config.GetCounterFlowStrainRate()
+        except AttributeError:
+            pass
 
         self.__PrepareOutputDirectories()
         self.__translate_to_matlab = self._Config.WriteMatlabFiles()
@@ -473,9 +482,29 @@ class DataGenerator_Cantera(DataGenerator_Base):
             freeflame.inlet.T = T_ub
             freeflame.inlet.Y = self.gas.Y
 
+        # Build output paths early so we can check for existing files.
+        if not path.isdir(self.GetOutputDir()+'/freeflame_data/'):
+            mkdir(self.GetOutputDir()+'/freeflame_data/')
+        if not path.isdir(self.GetOutputDir()+'/freeflame_data/'+folder_header+'_'+str(round(mix_status, 6))):
+            mkdir(self.GetOutputDir()+'/freeflame_data/'+folder_header+'_'+str(round(mix_status, 6)))
+        freeflame_filename     = "freeflamelet_"+folder_header+str(round(mix_status,6))+"_Tu"+str(round(T_ub, 4))+".csv"
+        filename_plus_folder   = self.GetOutputDir()+"/freeflame_data/"+folder_header+'_'+str(round(mix_status, 6)) + "/"+freeflame_filename
+        yaml_plus_folder       = filename_plus_folder.replace('.csv', '.yaml')
+
+        # If a YAML exists, restore as warm-start before solving.
+        # Always re-solve and overwrite the CSV (use auto=False when restoring).
+        warm_started = False
+        if path.isfile(yaml_plus_folder):
+            try:
+                freeflame.restore(yaml_plus_folder, 'solution')
+                warm_started = True
+                print("Freeflame at %s %.3e, Tu %.3f: warm-start from YAML." % (folder_header, mix_status, T_ub))
+            except Exception as exc:
+                print("Freeflame at %s %.3e, Tu %.3f: YAML restore failed (%s), re-solving from scratch." % (folder_header, mix_status, T_ub, exc))
+
         # Try to solve the flamelet solution. If solution diverges, move on to next flamelet.
         try:
-            freeflame.solve(loglevel=self.__loglevel, refine_grid=True, auto=(prev_flame is None))
+            freeflame.solve(loglevel=self.__loglevel, refine_grid=True, auto=(not warm_started and prev_flame is None))
 
             # Computing mass flow rate for later burner flame evaluation
             self.m_dot_free_flame = freeflame.velocity[0]*freeflame.density[0]
@@ -487,14 +516,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
             variables, data_calc = self.__SaveFlameletData(freeflame, self.gas)
 
-            # Generate sub-directory if it's not there.
-            if not path.isdir(self.GetOutputDir()+'/freeflame_data/'):
-                mkdir(self.GetOutputDir()+'/freeflame_data/')
-            if not path.isdir(self.GetOutputDir()+'/freeflame_data/'+folder_header+'_'+str(round(mix_status, 6))):
-                mkdir(self.GetOutputDir()+'/freeflame_data/'+folder_header+'_'+str(round(mix_status, 6)))
-
-            freeflame_filename = "freeflamelet_"+folder_header+str(round(mix_status,6))+"_Tu"+str(round(T_ub, 4))+".csv"
-            filename_plus_folder = self.GetOutputDir()+"/freeflame_data/"+folder_header+'_'+str(round(mix_status, 6)) + "/"+freeflame_filename
+            # Directories were already created before the skip-check above.
+            freeflame.save(yaml_plus_folder, 'solution', overwrite=True)
             fid = open(filename_plus_folder, 'w+')
             fid.write(variables + "\n")
             csvWriter = csv.writer(fid)
@@ -629,8 +652,42 @@ class DataGenerator_Cantera(DataGenerator_Base):
                     idx += 1
 
         for i_burnerflame, m_dot_next in _iterate_mdot():
+            # Build output paths before solving so we can check for existing files.
+            if not path.isdir(self.GetOutputDir()+'/burnerflame_data/'):
+                mkdir(self.GetOutputDir()+'/burnerflame_data/')
+            if not path.isdir(self.GetOutputDir()+'/burnerflame_data/'+folder_header+'_'+str(round(mix_status, 6))):
+                mkdir(self.GetOutputDir()+'/burnerflame_data/'+folder_header+'_'+str(round(mix_status, 6)))
+            burnerflame_filename = "burnerflamelet_%s%.6f_mdot%.5f.csv" % (folder_header, mix_status, m_dot_next)
+            filename_plus_folder = self.GetOutputDir()+"/burnerflame_data/"+folder_header+'_'+str(round(mix_status, 6)) + "/"+burnerflame_filename
+            yaml_plus_folder     = filename_plus_folder.replace('.csv', '.yaml')
+
+            # If a YAML exists, restore as warm-start before solving.
+            # Always re-solve and overwrite the CSV (use auto=False when restoring).
+            warm_started_burner = False
+            if path.isfile(yaml_plus_folder):
+                try:
+                    # Reconstruct a minimal BurnerFlame shell to restore into.
+                    self.gas.TP = T_burner, ct.one_atm
+                    if self.__define_equivalence_ratio:
+                        self.gas.set_equivalence_ratio(mix_status, self.__fuel_string, self.__oxidizer_string)
+                    else:
+                        self.gas.set_mixture_fraction(mix_status, self.__fuel_string, self.__oxidizer_string)
+                    initialgrid = np.linspace(0, self.__initial_grid_length, self.__initial_grid_Np)
+                    burner_flame = ct.BurnerFlame(self.gas, grid=initialgrid)
+                    burner_flame.burner.T    = T_burner
+                    burner_flame.burner.mdot = m_dot_next
+                    burner_flame.set_refine_criteria(**self.__burner_flame_refine)
+                    burner_flame.transport_model = self.__transport_model
+                    burner_flame.restore(yaml_plus_folder, 'solution')
+                    prev_burner_flame = burner_flame
+                    warm_started_burner = True
+                    print("Burnerflame at %s %.3e, mdot %.2e: warm-start from YAML." % (folder_header, mix_status, m_dot_next))
+                except Exception as exc:
+                    print("Burnerflame at %s %.3e, mdot %.2e: YAML restore failed (%s), re-solving." % (folder_header, mix_status, m_dot_next, exc))
+
             try:
-                burner_flame = self.compute_SingleBurnerFlame(mix_status, T_burner, m_dot_next, prev_burner_flame)
+                burner_flame = self.compute_SingleBurnerFlame(mix_status, T_burner, m_dot_next,
+                                                              prev_burner_flame if warm_started_burner else prev_burner_flame)
                 if np.max(burner_flame.T) <= DefaultSettings_FGM.T_threshold:
                     print("Burnerflame at %s %.3e, mdot %.2e is not burning" % (folder_header, mix_status, m_dot_next))
                     if m_dot_iter is None:
@@ -640,14 +697,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
                 # Extracting flamelet data
                 variables, data_calc = self.__SaveFlameletData(burner_flame, self.gas)
 
-                # Generate sub-directory if it's not there.
-                if not path.isdir(self.GetOutputDir()+'/burnerflame_data/'):
-                    mkdir(self.GetOutputDir()+'/burnerflame_data/')
-                if not path.isdir(self.GetOutputDir()+'/burnerflame_data/'+folder_header+'_'+str(round(mix_status, 6))):
-                    mkdir(self.GetOutputDir()+'/burnerflame_data/'+folder_header+'_'+str(round(mix_status, 6)))
-                # burnerflame_filename = "burnerflamelet_"+folder_header+str(round(mix_status,6))+"_mdot"+str(round(m_dot_next, 4))+".csv"
-                burnerflame_filename = "burnerflamelet_%s%.6f_mdot%.5f.csv" % (folder_header, mix_status, m_dot_next)
-                filename_plus_folder = self.GetOutputDir()+"/burnerflame_data/"+folder_header+'_'+str(round(mix_status, 6)) + "/"+burnerflame_filename
+                # Directories and filenames were already built before the skip-check above.
+                burner_flame.save(yaml_plus_folder, 'solution', overwrite=True)
                 fid = open(filename_plus_folder, 'w+')
                 fid.write(variables + "\n")
                 csvWriter = csv.writer(fid)
@@ -702,7 +753,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
             raise Exception("Reactant velocities should be higher than zero.")
         if T_ub < 200:
             raise Exception("Reactant temperature should be higher than 200K.")
-        counterflame = ct.CounterflowDiffusionFlame(self.gas, width=18e-3)
+        counterflame = ct.CounterflowDiffusionFlame(self.gas, width=self.__initial_grid_length)
 
         self.gas.set_mixture_fraction(1.0, self.__fuel_string, self.__oxidizer_string)
         self.gas.TP = T_ub, ct.one_atm
@@ -779,6 +830,110 @@ class DataGenerator_Cantera(DataGenerator_Base):
                 print("Unsuccessful Counter-Flow Diffusion Flame at Strain Iteration " + str(n_iter))
                 strain_overload = True
             n_iter += 1
+
+    def ComputeCounterFlowFlamesFixedStrain(self, T_ub:float):
+        """Solve one counterflow diffusion flame at a fixed global strain rate.
+
+        Inlet velocities are recomputed from the momentum-balance condition at
+        every temperature level so the global strain rate stays exactly at the
+        configured value regardless of density changes.
+
+        A YAML restart file is saved alongside each CSV so that subsequent runs
+        can warm-start from the nearest already-solved flame.  If a CSV already
+        exists for this temperature it is skipped without re-solving.
+
+        Output is written to counterflame_data/counterflamelet_fixedstrain_Tu{T}.csv.
+
+        :param T_ub: Reactant temperature in Kelvin.
+        :type T_ub: float
+        :raises Exception: If the reactant temperature is lower than 200 K.
+        """
+        if T_ub < 200:
+            raise Exception("Reactant temperature should be higher than 200 K.")
+
+        out_dir  = self.GetOutputDir() + "/counterflame_data"
+        if not path.isdir(out_dir):
+            mkdir(out_dir)
+
+        t_tag    = str(round(T_ub, 4))
+        csv_path = path.join(out_dir, "counterflamelet_fixedstrain_Tu" + t_tag + ".csv")
+        yaml_path = path.join(out_dir, "counterflamelet_fixedstrain_Tu" + t_tag + ".yaml")
+
+        # If a YAML for this exact temperature exists, use it as the restart and
+        # re-solve (overwriting the old CSV).  If no YAML exists, warm-start from
+        # the nearest available YAML.  If no YAML exists at all, use auto-solve.
+        use_auto = True
+
+        a = self.__counterflow_strain_rate
+        L = self.__initial_grid_length
+
+        # Momentum-balanced velocities: a_global = (u_fuel + u_ox) / L,
+        #   rho_fuel * u_fuel = rho_ox * u_ox
+        self.gas.set_mixture_fraction(1.0, self.__fuel_string, self.__oxidizer_string)
+        self.gas.TP = T_ub, ct.one_atm
+        rho_fuel = self.gas.density_mass
+        Y_fuel   = self.gas.Y.copy()
+
+        self.gas.set_mixture_fraction(0.0, self.__fuel_string, self.__oxidizer_string)
+        self.gas.TP = T_ub, ct.one_atm
+        rho_ox = self.gas.density_mass
+        Y_ox   = self.gas.Y.copy()
+
+        u_fuel = a * L / (1.0 + rho_fuel / rho_ox)
+        u_ox   = u_fuel * rho_fuel / rho_ox
+
+        flame = ct.CounterflowDiffusionFlame(self.gas, width=L)
+        flame.fuel_inlet.mdot     = rho_fuel * u_fuel
+        flame.fuel_inlet.Y        = Y_fuel
+        flame.fuel_inlet.T        = T_ub
+        flame.oxidizer_inlet.mdot = rho_ox * u_ox
+        flame.oxidizer_inlet.Y    = Y_ox
+        flame.oxidizer_inlet.T    = T_ub
+        flame.P = ct.one_atm
+        flame.set_refine_criteria(**self.__counter_flame_refine)
+
+        # Warm-start from the nearest already-solved YAML if available.
+        existing_yamls = [f for f in _listdir(out_dir)
+                          if f.startswith("counterflamelet_fixedstrain_Tu") and f.endswith(".yaml")]
+        if existing_yamls:
+            def _parse_T(fname):
+                try:
+                    return float(fname.replace("counterflamelet_fixedstrain_Tu", "").replace(".yaml", ""))
+                except ValueError:
+                    return None
+            candidates = [(abs(_parse_T(f) - T_ub), f) for f in existing_yamls if _parse_T(f) is not None]
+            if candidates:
+                _, nearest_yaml = min(candidates)
+                guess_path = path.join(out_dir, nearest_yaml)
+                try:
+                    flame.restore(guess_path, 'solution')
+                    # Reapply boundary conditions after restore.
+                    flame.fuel_inlet.mdot     = rho_fuel * u_fuel
+                    flame.fuel_inlet.Y        = Y_fuel
+                    flame.fuel_inlet.T        = T_ub
+                    flame.oxidizer_inlet.mdot = rho_ox * u_ox
+                    flame.oxidizer_inlet.Y    = Y_ox
+                    flame.oxidizer_inlet.T    = T_ub
+                    use_auto = False
+                    print("Counter-flow flame at Tu=%.1f K: warm-start from %s" % (T_ub, nearest_yaml))
+                except Exception as exc:
+                    print("Counter-flow flame at Tu=%.1f K: warm-start failed (%s), using auto-solve." % (T_ub, exc))
+
+        flame.solve(loglevel=self.__loglevel, auto=use_auto)
+        print("Counter-flow flame (fixed strain %.1f 1/s) at Tu=%.1f K: max T = %.1f K, %d grid points"
+              % (a, T_ub, np.max(flame.T), len(flame.grid)))
+
+        # Save YAML for future warm-starts before writing the CSV.
+        flame.save(yaml_path, 'solution', overwrite=True)
+
+        variables, data_calc = self.__SaveFlameletData(flame, self.gas)
+
+        fid = open(csv_path, 'w+')
+        fid.write(variables + "\n")
+        csvWriter = csv.writer(fid)
+        csvWriter.writerows(data_calc)
+        fid.close()
+        return
 
     def ComputeEquilibrium(self, mix_status:float, T_range:np.ndarray[float], burnt:bool=False):
         """Generate chemical equilibrium data for a given mixture status and temperature range.
@@ -999,14 +1154,17 @@ class DataGenerator_Cantera(DataGenerator_Base):
             if not path.isdir(self.GetOutputDir()+'counterflame_data'):
                 mkdir(self.GetOutputDir()+'counterflame_data')
             for T_ub in T_unburnt_range:
-                self.gas.TP = T_ub, 101325
-                self.gas.set_mixture_fraction(1.0, self.__fuel_string, self.__oxidizer_string)
-                rho_fuel = self.gas.density_mass
-                rhou_fuel = rho_fuel * self.__u_fuel
-                self.gas.set_mixture_fraction(0.0, self.__fuel_string, self.__oxidizer_string)
-                rho_ox = self.gas.density_mass
-                self.__u_oxidizer = rhou_fuel / rho_ox
-                self.ComputeCounterFlowFlames(v_fuel=self.__u_fuel, v_ox=self.__u_oxidizer, T_ub=T_ub)
+                if self.__counterflow_fixed_strain:
+                    self.ComputeCounterFlowFlamesFixedStrain(T_ub=T_ub)
+                else:
+                    self.gas.TP = T_ub, 101325
+                    self.gas.set_mixture_fraction(1.0, self.__fuel_string, self.__oxidizer_string)
+                    rho_fuel = self.gas.density_mass
+                    rhou_fuel = rho_fuel * self.__u_fuel
+                    self.gas.set_mixture_fraction(0.0, self.__fuel_string, self.__oxidizer_string)
+                    rho_ox = self.gas.density_mass
+                    self.__u_oxidizer = rhou_fuel / rho_ox
+                    self.ComputeCounterFlowFlames(v_fuel=self.__u_fuel, v_ox=self.__u_oxidizer, T_ub=T_ub)
 
         # Generate all other flamelet types.
         for mix_status in self.__unb_mixture_status:
@@ -1105,7 +1263,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
         data_matrix = np.append(data_matrix, enth_i, axis=1)
         variables += ',' + ','.join("Le-"+s for s in gas.species_names)
         data_matrix = np.append(data_matrix, Le_i, axis=1)
-
+        variables += ',' + ','.join("X-"+s for s in gas.species_names)
+        data_matrix = np.append(data_matrix, X.T, axis=1)
 
         if flame_is_gas:
             variables += ','+DefaultSettings_FGM.name_enth+','
@@ -1245,7 +1404,8 @@ class DataGenerator_Cantera(DataGenerator_Base):
             csvWriter.writerows(total_data)
 
 def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors:int=2, loglevel:int=0,
-                        free_flame_refine:dict=None, burner_flame_refine:dict=None):
+                        free_flame_refine:dict=None, burner_flame_refine:dict=None,
+                        counter_flame_refine:dict=None):
     """Generate flamelet data according to Config_FGM settings either in serial or parallel.
 
     :param Config: Config_FGM class containing manifold and flamelet generation settings.
@@ -1262,6 +1422,9 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
     :param burner_flame_refine: Cantera burner-flame refinement criteria dict with keys ratio, slope, curve, prune.
         If None, the DataGenerator_Cantera defaults are used.
     :type burner_flame_refine: dict, optional
+    :param counter_flame_refine: Cantera counter-flow flame refinement criteria dict with keys ratio, slope, curve, prune.
+        If None, the DataGenerator_Cantera defaults are used.
+    :type counter_flame_refine: dict, optional
     :raises Exception: If number of processors is set to zero when running in parallel.
     """
 
@@ -1291,6 +1454,8 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
             F.SetFreeFlameRefineCriteria(**free_flame_refine)
         if burner_flame_refine is not None:
             F.SetBurnerFlameRefineCriteria(**burner_flame_refine)
+        if counter_flame_refine is not None:
+            F.SetCounterFlameRefineCriteria(**counter_flame_refine)
         return F
 
     # Set up Cantera flamelet generator object

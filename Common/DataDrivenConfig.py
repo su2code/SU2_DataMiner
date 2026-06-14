@@ -786,6 +786,8 @@ class Config_FGM(Config):
     __generate_extra_interpolated_burnerflames:bool = True                    # Generate extra interpolated burner-stabilized flamelets
     __generate_equilibrium:bool = DefaultSettings_FGM.include_equilibrium     # Generate chemical equilibrium data
     __generate_counterflames:bool = DefaultSettings_FGM.include_counterflames   # Generate counter-flow diffusion flamelets.
+    __counterflow_fixed_strain:bool  = DefaultSettings_FGM.counterflow_fixed_strain  # Fixed-strain mode for counterflow flames.
+    __counterflow_strain_rate:float  = DefaultSettings_FGM.counterflow_strain_rate   # Global strain rate [1/s] for fixed-strain mode.
 
     __write_MATLAB_files:bool = False  # Write TableGenerator compatible flamelet files.
 
@@ -962,7 +964,10 @@ class Config_FGM(Config):
         if self.__generate_equilibrium:
             print("-Chemical equilibrium data")
         if self.__generate_counterflames:
-            print("-Counter-flow diffusion flamelet data")
+            if self.__counterflow_fixed_strain:
+                print("-Counter-flow diffusion flamelet data (fixed strain rate: %.1f 1/s)" % self.__counterflow_strain_rate)
+            else:
+                print("-Counter-flow diffusion flamelet data (ramp to extinction)")
         print("")
 
         print("Flamelet manifold data characteristics: ")
@@ -1579,6 +1584,51 @@ class Config_FGM(Config):
         :rtype: bool
         """
         return self.__generate_counterflames
+
+    def SetCounterFlowFixedStrain(self, fixed:bool=True):
+        """
+        Select fixed-strain-rate mode for counter-flow diffusion flames.
+
+        When True, one flame is solved per temperature level at the strain rate
+        set by SetCounterFlowStrainRate.  When False (default), the existing
+        ramp-to-extinction behaviour is used.
+
+        :param fixed: enable fixed-strain mode.
+        :type fixed: bool
+        """
+        self.__counterflow_fixed_strain = fixed
+        return
+
+    def GetCounterFlowFixedStrain(self) -> bool:
+        """
+        Whether fixed-strain mode is enabled for counter-flow flames.
+
+        :return: fixed-strain mode is active.
+        :rtype: bool
+        """
+        return self.__counterflow_fixed_strain
+
+    def SetCounterFlowStrainRate(self, strain_rate:float):
+        """
+        Set the global strain rate used in fixed-strain counter-flow flame mode.
+
+        :param strain_rate: global strain rate in 1/s.
+        :type strain_rate: float
+        :raises Exception: if strain_rate is not strictly positive.
+        """
+        if strain_rate <= 0:
+            raise Exception("Counter-flow strain rate must be strictly positive.")
+        self.__counterflow_strain_rate = strain_rate
+        return
+
+    def GetCounterFlowStrainRate(self) -> float:
+        """
+        Return the global strain rate used in fixed-strain counter-flow flame mode.
+
+        :return: global strain rate [1/s].
+        :rtype: float
+        """
+        return self.__counterflow_strain_rate
 
     def GenerateExtraInterpolatedBurnerFlames(self):
         """

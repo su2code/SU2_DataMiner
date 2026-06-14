@@ -615,7 +615,8 @@ class FlameletConcatenator:
         # Count the number of counter-flow diffusion flamelets.
         if self.__include_counterflame:
             print("Counting counter-flow diffusion flame data...")
-            counterflame_files = listdir(self.__flameletdata_dir + "/counterflame_data")
+            counterflame_files = [f for f in listdir(self.__flameletdata_dir + "/counterflame_data")
+                                  if f.endswith('.csv')]
             n_counterflames += len(counterflame_files)
             for f in counterflame_files:
                 with open(self.__flameletdata_dir + "/counterflame_data/" + f, 'r') as fid:
@@ -646,7 +647,7 @@ class FlameletConcatenator:
 
     def __InterpolateFlameletData(self, flamelet_dir:str, eq_file:str, i_start:int, i_flamelet_total:int, is_fuzzy:bool=False, is_equilibrium:bool=False):
 
-        flamelets = listdir(flamelet_dir + "/" + eq_file)
+        flamelets = [f for f in listdir(flamelet_dir + "/" + eq_file) if f.endswith('.csv')]
         for i_flamelet, f in enumerate(flamelets):
             BurningFlamelet:bool = True
 
