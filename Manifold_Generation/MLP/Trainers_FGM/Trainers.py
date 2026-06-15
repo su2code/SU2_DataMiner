@@ -868,7 +868,8 @@ def PlotFlameletData(Trainer:MLPTrainer, Config:Config_FGM, train_name:str):
 
     freeflamelet_input_files = []
     for phi in idx_phi_plot:
-        freeflame_files = os.listdir(flamelet_dir + "/freeflame_data/"+freeflame_phis[phi])
+        freeflame_files = [f for f in os.listdir(flamelet_dir + "/freeflame_data/"+freeflame_phis[phi])
+                           if f.endswith('.csv')]
         freeflamelet_input_files.append(flamelet_dir + "/freeflame_data/"+freeflame_phis[phi]+ "/"+freeflame_files[np.random.randint(0, len(freeflame_files))])
 
     # Prepare a figure window for each output variable.

@@ -709,8 +709,8 @@ class SU2TableGenerator:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             print("  Saved: %s" % save_path)
         if show:
-            plt.pause(0.01)   # non-blocking: figure appears and script continues
-        # Do not close the figure so all windows stay open until the script ends.
+            plt.show()
+        plt.close(fig)
         return
 
     def VisualizeTableLevel(self, val_mix_frac:float, var_to_plot:str=None,
@@ -780,8 +780,8 @@ class SU2TableGenerator:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             print("  Saved: %s" % save_path)
         if show:
-            plt.pause(0.01)   # non-blocking: figure appears and script continues
-        # Do not close the figure so all windows stay open until the script ends.
+            plt.show()
+        plt.close(fig)
         return
 
     def GenerateTableNodes(self):

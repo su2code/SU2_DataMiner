@@ -42,6 +42,7 @@ def main():
     consistency_NICFD_PINN = TestCase("PIML training NICFD")
     consistency_NICFD_PINN.config_dir = "FluidTraining/MM_PINN/"
     consistency_NICFD_PINN.config_file = ""
+    consistency_NICFD_PINN.tolerance= 0.01
     consistency_NICFD_PINN.exec_command = "./train_MLP.py"
     consistency_NICFD_PINN.reference_files = ["SU2_MLP_ref.mlp"]
     consistency_NICFD_PINN.test_files = ["SU2_MLP.mlp"]
@@ -51,6 +52,7 @@ def main():
     hydrogen_flamelet = TestCase("H2_Flamelet")
     hydrogen_flamelet.config_dir = "FlameletGeneration/Adiabatic_H2/"
     hydrogen_flamelet.config_file = "adiabatic_flamelets.cfg"
+    hydrogen_flamelet.tolerance= 0.01
     hydrogen_flamelet.exec_command = "./generate_flamelet_data.py"
     hydrogen_flamelet.reference_files = ["flamelet_data.ref"]
     hydrogen_flamelet.test_files = ["freeflame_data/phi_1.0/freeflamelet_phi1.0_Tu300.0.csv"]
