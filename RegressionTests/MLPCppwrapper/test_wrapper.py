@@ -32,7 +32,7 @@ F = FlameletConcatenator(config, verbose_level=0)
 F.ConcatenateFlameletData()
 F.CollectBoundaryData()
 
-flamelet_to_test = choice(os.listdir("freeflame_data/phi_0.5/"))
+flamelet_to_test = choice([f for f in os.listdir("freeflame_data/phi_0.5/") if f.endswith('.csv')])
 flamelet_data_file = "freeflame_data/phi_0.5/%s" % flamelet_to_test
 
 with open(flamelet_data_file,'r') as fid:
