@@ -9,7 +9,7 @@ os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 from Common.DataDrivenConfig import Config_FGM
-from Data_Generation.DataGenerator_FGM import ComputeFlameletData, DataGenerator_Cantera
+from Data_Generation.DataGenerator_FGM import ComputeFlameletData
 
 # Load FGM configuration
 Config = Config_FGM("TableGeneration.cfg")

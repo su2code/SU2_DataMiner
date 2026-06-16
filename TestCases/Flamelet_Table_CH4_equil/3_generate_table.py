@@ -1,6 +1,5 @@
 from Manifold_Generation.LUT.FlameletTableGeneration import SU2TableGenerator
 from Common.DataDrivenConfig import Config_FGM
-import matplotlib
 import matplotlib.pyplot as plt
 
 # ── Output options ──────────────────────────────────────────────────────────
