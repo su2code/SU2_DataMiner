@@ -14,15 +14,18 @@ class DataPlotter_FGM(DataPlotter_Base):
     __data_dir:str = None
     __plot_freeflames:bool = DefaultSettings_FGM.include_freeflames
     __plot_burnerflames:bool = DefaultSettings_FGM.include_burnerflames
+    __plot_counterflowflames:bool = DefaultSettings_FGM.include_counterflowflames
     __plot_equilibrium:bool = DefaultSettings_FGM.include_equilibrium
     __manual_select:bool = True
 
     __color_freeflames:str = 'r'
     __color_burnerflames:str = 'm'
+    __color_counterflowflames:str = 'g'
     __color_equilibrium:str = 'b'
 
     __freeflame_displayname = r"Adiabatic flame data"
     __burnerflame_displayname = r"Burner-stabilized data"
+    __counterflowflame_displayname = r"Counterflow flame data"
     __equilibrium_displayname = r"Chemical equilibrium data"
 
     __mix_status:list[float] = []
@@ -52,6 +55,7 @@ class DataPlotter_FGM(DataPlotter_Base):
         self.__data_dir = self._Config.GetOutputDir()
         self.__plot_freeflames = self._Config.GenerateFreeFlames()
         self.__plot_burnerflames = self._Config.GenerateBurnerFlames()
+        self.__plot_counterflowflames = self._Config.GenerateCounterFlames()
         self.__plot_equilibrium = self._Config.GenerateEquilibrium()
         return
 
@@ -92,6 +96,15 @@ class DataPlotter_FGM(DataPlotter_Base):
         :type input: bool
         """
         self.__plot_burnerflames = input
+        return
+
+    def PlotCounterflowflames(self, input:bool=False):
+        """Plot data under counterflowflame_data directory in the flamelet data directory.
+
+        :param input: plot counterflow flame data.
+        :type input: bool
+        """
+        self.__plot_counterflowflames = input
         return
 
     def PlotEquilibrium(self, input:bool=DefaultSettings_FGM.include_equilibrium):
@@ -158,6 +171,18 @@ class DataPlotter_FGM(DataPlotter_Base):
                 plot_label=""
                 plot_data_burnerflame.append(plot_data)
 
+        plot_data_counterflowflame = []
+        if self.__plot_counterflowflames:
+            plot_label=self.__counterflowflame_displayname
+            for f in self.counterflowflame_files:
+                plot_data = self.__GeneratePlotData(f, plot_variables)
+                if plot_3D:
+                    self._ax.plot3D(plot_data[:,0],plot_data[:,1],plot_data[:,2],color=self.__color_counterflowflames, label=plot_label, linewidth=2)
+                else:
+                    self._ax.plot(plot_data[:,0],plot_data[:,1],color=self.__color_counterflowflames, label=plot_label, linewidth=2)
+                plot_label=""
+                plot_data_counterflowflame.append(plot_data)
+
         plot_data_eq = []
         if self.__plot_equilibrium:
             plot_label=self.__equilibrium_displayname
@@ -170,7 +195,7 @@ class DataPlotter_FGM(DataPlotter_Base):
                 plot_label=""
                 plot_data_eq.append(plot_data)
 
-        return [plot_data_freeflame, plot_data_burnerflame, plot_data_eq]
+        return [plot_data_freeflame, plot_data_burnerflame, plot_data_counterflowflame, plot_data_eq]
 
 
     def __GetFileNames(self):
@@ -219,6 +244,25 @@ class DataPlotter_FGM(DataPlotter_Base):
                         filenames.sort()
                         for file in filenames:
                             self.burnerflame_files.append(burnerflame_dir + header + str(round(i, 6)) + "/" +file)
+
+        if self.__plot_counterflowflames:
+            self.counterflowflame_files = []
+            counterflowflame_dir = self.__data_dir + "/counterflowflame_data/"
+            if self.__manual_select and len(self.__mix_status) == 0:
+                filenames = askopenfilenames(initialdir=counterflowflame_dir, title="Choose counterflow flame files to plot")
+                for file in filenames:
+                    self.counterflowflame_files.append(file)
+            else:
+                for i in self.__mix_status:
+                    if self.__manual_select:
+                        filenames = askopenfilenames(initialdir=counterflowflame_dir+ header + str(round(i, 6)), title="Choose counterflow flame files to plot")
+                        for file in filenames:
+                            self.counterflowflame_files.append(file)
+                    else:
+                        filenames = next(os.walk(counterflowflame_dir + header + str(round(i, 6))), (None, None, []))[2]
+                        filenames.sort()
+                        for file in filenames:
+                            self.counterflowflame_files.append(counterflowflame_dir + header + str(round(i, 6)) + "/" +file)
 
         if self.__plot_equilibrium:
             self.equilibrium_files = []
