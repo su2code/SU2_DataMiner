@@ -138,11 +138,9 @@ class DataGenerator_Cantera(DataGenerator_Base):
         self.__run_counterflames = self._Config.GenerateCounterFlames()
         self.__counterflow_fixed_strain = getattr(self._Config, '_Config_FGM__counterflow_fixed_strain', DefaultSettings_FGM.counterflow_fixed_strain)
         self.__counterflow_strain_rate  = getattr(self._Config, '_Config_FGM__counterflow_strain_rate',  DefaultSettings_FGM.counterflow_strain_rate)
-        try:
-            self.__counterflow_fixed_strain = self._Config.GetCounterFlowFixedStrain()
-            self.__counterflow_strain_rate  = self._Config.GetCounterFlowStrainRate()
-        except AttributeError:
-            pass
+        self.__counterflow_fixed_strain = self._Config.GetCounterFlowFixedStrain()
+        self.__counterflow_strain_rate  = self._Config.GetCounterFlowStrainRate()
+
 
         self.__PrepareOutputDirectories()
         self.__translate_to_matlab = self._Config.WriteMatlabFiles()
