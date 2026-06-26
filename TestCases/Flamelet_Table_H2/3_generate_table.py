@@ -30,74 +30,72 @@ Tgen = SU2TableGenerator(Config, n_near=14, p_fac=1)
 Tgen.SetNCores(4)  # Enable parallel processing with 4 cores
 Tgen.SetCurvatureGridResolution(300)  # Reduce grid resolution for faster curvature computation (default: 800)
 
-# Generate a 2D (ProgressVariable, EnthalpyTot) LUT for a single equivalence
-# ratio phi = 0.80.  Because phi_min == phi_max, the table generator writes a
-# Dragon v1.0.1 file without mixture-fraction levels.
-Tgen.SetEquivalenceRatioLimits(phi_min=0.80, phi_max=0.80)
-Tgen.SetNTableLevels(1)
-Tgen.SetRefinementFields(["ProdRateTot_PV", "Y_dot_net-CO", "Y_dot_pos-CO","Y_dot_neg-CO"])
+#
+Tgen.SetEquivalenceRatioLimits(phi_min=0.30, phi_max=0.90)
+Tgen.SetNTableLevels(3)
+Tgen.SetRefinementFields(["ProdRateTot_PV","Heat_Release"])
+Tgen.SetRefinementMethod("gradient")
 
-# small
+# coarse
 #Tgen.SetBaseCellSize(1e-2)
-#Tgen.SetRefinedCellSize(1e-2)
-#Tgen.SetRefinementRadius(1e-2)
-#Tgen.SetRefinementMethod("gradient")
+#Tgen.SetRefinedCellSize(0.5e-2)
+#Tgen.SetRefinementRadius(2.0e-2)
 #Tgen.SetMaxRefinementSeeds(500)
 #Tgen.SetHullCellSize(1.0e-2)
-
-# medium
-Tgen.SetBaseCellSize(5e-3)
-Tgen.SetRefinedCellSize(5e-3)
-Tgen.SetRefinementRadius(5e-3)
-Tgen.SetRefinementMethod("gradient")
-Tgen.SetMaxRefinementSeeds(500)
-Tgen.SetHullCellSize(5.0e-3)
-
-# fine
-#Tgen.SetBaseCellSize(2.5e-3)
-#Tgen.SetRefinedCellSize(1.0e-3)
-#Tgen.SetRefinementRadius(2.5e-3)
-#Tgen.SetRefinementMethod("gradient")
-#Tgen.SetMaxRefinementSeeds(500)
-#Tgen.SetHullCellSize(2.5e-3)
-
-
-
-
-Tgen.SetTableAxes(level_cv_name="MixtureFraction",
-                       plane_cv_names=["ProgressVariable", "EnthalpyTot"])
 
 # Generate table connectivity and interpolate flamelet data.
 Tgen.GenerateTableNodes()
 
-# Visualize the table mesh and reaction rate at phi = 0.80.
-cv_target = Config.GetUnburntScalars(equivalence_ratio=0.80, temperature=300.0)
+Tgen.SetTableAxes(level_cv_name="MixtureFraction",
+                       plane_cv_names=["ProgressVariable", "EnthalpyTot"])
+
+# ── Diagnostics: inspect table quality before writing ──────────────────────
+# T(Z) for 10 enthalpy levels spanning the full data range.
+_show(Tgen.PlotTableSlices,
+    x_cv        = "MixtureFraction",
+    y_var       = "Temperature",
+    slice_cv    = "EnthalpyTot",
+    slice_range = None,
+    n_slices    = 10,
+    n_x_points  = 300,
+    save_path   = _save("T_vs_Z_slices.png"))
+
+# Heat_Release(Z) for the same 10 enthalpy levels.
+_show(Tgen.PlotTableSlices,
+    x_cv        = "MixtureFraction",
+    y_var       = "Heat_Release",
+    slice_cv    = "EnthalpyTot",
+    slice_range = None,
+    n_slices    = 10,
+    n_x_points  = 300,
+    save_path   = _save("HRR_vs_Z_slices.png"))
+
+# Visualize the table mesh and reaction rate at phi = 0.55.
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.60, temperature=300.0)
 pv_target = cv_target[0]
 z_target  = cv_target[2]
 print("Target unburnt progress variable:", pv_target)
 
 # Mesh only:
 _show(Tgen.VisualizeTableLevel, z_target,
-      save_path=_save("mesh_phi080.png"))
+      save_path=_save("mesh_cH.png"))
+
 # 2D colour map of Temperature (no wireframe):
 _show(Tgen.VisualizeTableLevel, z_target, "Temperature",
-      plot_3d=False, show_grid=False, save_path=_save("T_phi080_2d.png"))
+      plot_3d=False, show_grid=False, save_path=_save("T_cH_2d.png"))
+
 # 3D surface of Temperature (with wireframe):
 _show(Tgen.VisualizeTableLevel, z_target, "Temperature",
-      plot_3d=True, show_grid=True, save_path=_save("T_phi080_3d.png"))
+      plot_3d=True, show_grid=True, save_path=_save("T_phi060_3d.png"))
 # Production rate of progress variable:
 _show(Tgen.VisualizeTableLevel, z_target, "ProdRateTot_PV",
-      plot_3d=False, show_grid=False, save_path=_save("ProdRate_phi080_2d.png"))
-# Optional: CO source term visualizations (uncomment if needed)
-#_show(Tgen.VisualizeTableLevel, z_target, "Y_dot_net-CO",
-#      plot_3d=False, show_grid=False, save_path=_save("Y_dot_net_CO_2d.png"))
-#_show(Tgen.VisualizeTableLevel, z_target, "Y_dot_pos-CO",
-#      plot_3d=False, show_grid=False, save_path=_save("Y_dot_pos_CO_2d.png"))
-#_show(Tgen.VisualizeTableLevel, z_target, "Y_dot_neg-CO",
-#      plot_3d=False, show_grid=False, save_path=_save("Y_dot_neg_CO_2d.png"))
-# from 99% of the max progress variable, set the source terms of CO and H2 to zero
+      plot_3d=False, show_grid=False, save_path=_save("ProdRate_phi060_2d.png"))
+_show(Tgen.VisualizeTableLevel, z_target, "ProdRateTot_PV",
+      plot_3d=True, show_grid=False, save_path=_save("ProdRate_phi060_3d.png"))
+
+# from 99% of the max progress variable, set the source terms of H2 to zero
 # if the absolute value of the source terms is |S| < 0.1
-Tgen.ClampSourceTerms(species_list=["CO", "H2", "CO2", "H2O"], pv_frac=0.99, abs_tol=0.1)
+Tgen.ClampSourceTerms(species_list=["H2", "H2O"], pv_frac=0.99, abs_tol=0.1)
 
 # Write SU2 .drg table file (Dragon v1.0.1 format, 2D).
 Tgen.WriteTableFile()
