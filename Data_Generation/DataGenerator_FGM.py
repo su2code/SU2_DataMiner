@@ -1431,19 +1431,8 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
 
     mix_bounds = Config.GetMixtureBounds()
     Np_unb_mix = Config.GetNpMix()
-    Config.gas.TP=300,101325
-    Config.gas.set_equivalence_ratio(1.0, Config.GetFuelString(), Config.GetOxidizerString())
-    if Config.GetMixtureStatus():
-        mix_status_stoch = Config.gas.mixture_fraction(Config.GetFuelString(), Config.GetOxidizerString())
-    else:
-        mix_status_stoch = Config.gas.equivalence_ratio(Config.GetFuelString(), Config.GetOxidizerString())
-    if mix_bounds[0] < mix_status_stoch and mix_bounds[1] > mix_status_stoch:
-        mixture_range_lean = np.linspace(mix_bounds[0], mix_status_stoch, int(Np_unb_mix/2))
-        mixture_range_rich = np.linspace(mix_status_stoch, mix_bounds[1], int(Np_unb_mix/2)+1)
-        mixture_range = np.append(mixture_range_lean, mixture_range_rich[1:])
-    else:
-        # Equivalence ratios to calculate flamelets for are system inputs
-        mixture_range = np.linspace(mix_bounds[0], mix_bounds[1], Np_unb_mix)
+    # Always use uniform spacing as specified by user
+    mixture_range = np.linspace(mix_bounds[0], mix_bounds[1], Np_unb_mix)
 
     def _make_generator():
         F = DataGenerator_Cantera(Config)

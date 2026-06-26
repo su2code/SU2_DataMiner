@@ -211,6 +211,7 @@ class SU2TableGenerator:
     _refinement_method:str = "gradient"  # Refinement method: "gradient" or "curvature".
     _refinement_fields:list[str] = ["ProdRateTot_PV"]  # Flamelet fields used as refinement criteria; max indicator across all fields drives seed selection.
     _max_refinement_seeds:int = 500  # Maximum number of seed points passed to gmsh after subsampling.
+    _curvature_grid_resolution:int = 800  # Grid resolution (NxN) for computing curvature/gradient indicators.
 
     _table_nodes = []       # Progress variable, total enthalpy, and mixture fraction node values for each table level.
     _table_nodes_norm = []  # Normalized table nodes for each level.
@@ -395,6 +396,20 @@ class SU2TableGenerator:
         self._convex_hull_cell_size = cell_size
         return
 
+    def SetCurvatureGridResolution(self, n_points:int):
+        """Set the resolution of the uniform grid used for computing curvature/gradient indicators.
+        The grid is NxN points. Lower values speed up table generation significantly.
+        Recommended: 200-400 for coarse, 400-600 for moderate, 800+ for fine.
+
+        :param n_points: number of grid points per dimension (grid will be n_points x n_points).
+        :type n_points: int
+        :raises Exception: if n_points is less than 50.
+        """
+        if n_points < 50:
+            raise Exception("Grid resolution should be at least 50 points per dimension.")
+        self._curvature_grid_resolution = n_points
+        return
+
     def SetTableAxes(self, level_cv_name:str, plane_cv_names:list[str]):
         """Define which controlling variable sweeps across table levels (the level axis)
         and which two span the 2D mesh at each level (the plane axes).
@@ -571,10 +586,29 @@ class SU2TableGenerator:
         variation along the flame (not a true Z sweep).  That tiny real-world Δ is
         stretched to [0, 1] by the scaler, making Z-distances dominate the neighbour
         search and causing unphysical jumps.  Dropping Z from the search space fixes this.
+
+        However, if the dataset contains MULTIPLE equivalence ratios (e.g., phi=0.6, 0.7, 0.8),
+        we should keep the 3D interpolator even when generating a single-level table, because
+        the 3D distance properly weights neighbors by their Z-distance.
         """
         if self._D_full is None:
             return  # interpolator not yet built
-        print("Rebuilding 2D (%s) KD-tree for single-level table..." % ", ".join(self._plane_cv_names))
+
+        # Check if the dataset has a true Z-range (multiple equivalence ratios)
+        # vs differential-diffusion variation only (single equivalence ratio)
+        z_values = self._D_full[:, self._level_cv_idx]
+        z_range = np.max(z_values) - np.min(z_values)
+        z_mean = np.mean(z_values)
+        relative_z_range = z_range / z_mean if z_mean > 1e-10 else z_range
+
+        # Threshold: if Z varies by more than 5%, assume multiple equivalence ratios
+        if relative_z_range > 0.05:
+            print(f"Dataset contains multiple equivalence ratios (Z-range: {z_range:.4f}, {relative_z_range*100:.1f}% of mean).")
+            print("Keeping 3D interpolator for better Z-structure preservation.")
+            self._scaler_2d = None  # Clear 2D scaler flag
+            return  # Keep 3D interpolator
+
+        print(f"Rebuilding 2D ({', '.join(self._plane_cv_names)}) KD-tree for single-equivalence-ratio dataset...")
         CV_full_2d = self._D_full[:, self._plane_cv_idxs]
         self._scaler_2d = MinMaxScaler()
         CV_full_2d_scaled = self._scaler_2d.fit_transform(CV_full_2d)
@@ -1259,8 +1293,9 @@ class SU2TableGenerator:
         n_cv   = len(self._controlling_variables)
 
         # Define 2D grid between minimum and maximum plane controlling variables.
-        plane0_range = np.linspace(plane0_unb, plane0_b, 800)
-        plane1_range = np.linspace(plane1_min, plane1_max, 800)
+        n_grid = self._curvature_grid_resolution
+        plane0_range = np.linspace(plane0_unb, plane0_b, n_grid)
+        plane1_range = np.linspace(plane1_min, plane1_max, n_grid)
         xgrid, ygrid = np.meshgrid(plane0_range, plane1_range)
 
         n_pts = xgrid.size
@@ -1281,17 +1316,22 @@ class SU2TableGenerator:
         CV_grid_norm_init = self._scaler.transform(CV_grid_init)
         CV_grid_norm      = self._scaler.transform(CV_grid)
 
+        print(f"  Grid stats: {len(CV_grid_init)} initial points, {len(CV_grid)} kept after filtering ({100*len(CV_grid)/len(CV_grid_init):.1f}%)")
+
         # 3: Generate convex hull on the plane coordinates.
         hull   = ConvexHull(CV_grid_norm[:, p_idxs])
         x_hull = CV_grid_norm[hull.vertices, p_idxs[0]]
         y_hull = CV_grid_norm[hull.vertices, p_idxs[1]]
+        print(f"  Convex hull has {len(hull.vertices)} vertices from {len(CV_grid_norm)} data points")
 
         # 4: Locate refinement locations based on the combined indicator across all refinement fields.
         missing = [f for f in self._refinement_fields if f not in self._Flamelet_Variables]
         if missing:
             raise Exception("Refinement field(s) not found in flamelet data: %s. "
                             "Available fields: %s" % (missing, self._Flamelet_Variables))
+        print(f"  Evaluating flamelet interpolator for {len(CV_grid_init)} points...")
         Q_interp = self.__EvaluateFlameletInterpolator(CV_unscaled=CV_grid_init)
+        print(f"  Done evaluating interpolator")
         combined_indicator = np.zeros(n_pts)
         for field in self._refinement_fields:
             q_grid = np.reshape(Q_interp[:, self._Flamelet_Variables.index(field)], np.shape(xgrid))
@@ -1360,7 +1400,9 @@ class SU2TableGenerator:
         :return: mesh nodes of the 2D table mesh.
         :rtype: NDArray
         """
-        gmsh.initialize()
+        # Initialize gmsh or clear existing model
+        if not gmsh.isInitialized():
+            gmsh.initialize()
 
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("General.Verbosity", 1)
@@ -1373,13 +1415,10 @@ class SU2TableGenerator:
         refinement_radius = self._refinement_radius #* np.sqrt(level_area)
         print("Generating 2D mesh with base cell size %.4f, hull cell size %.4f and refined cell size %.4f" % (base_cell_size, hull_cell_size, refined_cell_size))
 
+        # Create hull boundary points
         hull_pts = []
-        for i in range(int(len(XY_hull)/2)):
+        for i in range(len(XY_hull)):
             hull_pts.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, hull_cell_size))
-        hull_pts_2 = [hull_pts[-1]]
-        for i in range(int(len(XY_hull)/2), len(XY_hull)):
-            hull_pts_2.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, hull_cell_size))
-        hull_pts_2.append(hull_pts[0])
 
         # Subsample refinement seed points to avoid excessive PointsList size.
         N_max_seeds = self._max_refinement_seeds
@@ -1389,19 +1428,23 @@ class SU2TableGenerator:
         else:
             XY_refinement_sub = XY_refinement
 
+        print(f"  Creating {len(XY_refinement_sub)} refinement seed points")
         embed_pts = []
         for i in range(len(XY_refinement_sub)):
             pt_idx = factory.addPoint(XY_refinement_sub[i, 0], XY_refinement_sub[i, 1], 0, refined_cell_size)
             embed_pts.append(pt_idx)
+        print(f"  Created {len(embed_pts)} embed points")
 
-        hull_curve_1 = factory.addPolyline(hull_pts)
-        hull_curve_2 = factory.addPolyline(hull_pts_2)
+        # Create individual line segments for the hull boundary
+        hull_lines = []
+        for i in range(len(hull_pts)):
+            line = factory.addLine(hull_pts[i], hull_pts[(i+1) % len(hull_pts)])
+            hull_lines.append(line)
 
-        CL = factory.addCurveLoop([hull_curve_1, hull_curve_2])
+        CL = factory.addCurveLoop(hull_lines)
 
         surf = factory.addPlaneSurface([CL])
-        gmsh.model.addPhysicalGroup(1, [hull_curve_1], name="hull_curve_1")
-        gmsh.model.addPhysicalGroup(1, [hull_curve_2], name="hull_curve_2")
+        gmsh.model.addPhysicalGroup(1, hull_lines, name="hull_boundary")
         gmsh.model.addPhysicalGroup(2, [surf], name="table_level")
         gmsh.model.geo.synchronize()
 
@@ -1411,19 +1454,23 @@ class SU2TableGenerator:
         gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
         gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
 
-        gmsh.model.mesh.field.add("Distance", 1)
-        gmsh.model.mesh.field.setNumbers(1, "PointsList", embed_pts)
-        gmsh.model.mesh.field.setNumber(1, "Sampling", 100)
-        gmsh.model.mesh.field.add("Threshold", 2)
-        gmsh.model.mesh.field.setNumber(2, "InField", 1)
-        gmsh.model.mesh.field.setNumber(2, "SizeMin", refined_cell_size)
-        gmsh.model.mesh.field.setNumber(2, "SizeMax", base_cell_size)
-        gmsh.model.mesh.field.setNumber(2, "DistMin", refinement_radius)
-        gmsh.model.mesh.field.setNumber(2, "DistMax", 1.5*refinement_radius)
+        print(f"  Setting up mesh fields with {len(embed_pts)} refinement points...")
+
+        # Only create refinement distance field if we have refinement points
+        if len(embed_pts) > 0:
+            gmsh.model.mesh.field.add("Distance", 1)
+            gmsh.model.mesh.field.setNumbers(1, "PointsList", embed_pts)
+            gmsh.model.mesh.field.setNumber(1, "Sampling", 100)
+            gmsh.model.mesh.field.add("Threshold", 2)
+            gmsh.model.mesh.field.setNumber(2, "InField", 1)
+            gmsh.model.mesh.field.setNumber(2, "SizeMin", refined_cell_size)
+            gmsh.model.mesh.field.setNumber(2, "SizeMax", base_cell_size)
+            gmsh.model.mesh.field.setNumber(2, "DistMin", refinement_radius)
+            gmsh.model.mesh.field.setNumber(2, "DistMax", 1.5*refinement_radius)
 
         # Refine along the convex hull boundary curves.
         gmsh.model.mesh.field.add("Distance", 3)
-        gmsh.model.mesh.field.setNumbers(3, "CurvesList", [hull_curve_1, hull_curve_2])
+        gmsh.model.mesh.field.setNumbers(3, "CurvesList", hull_lines)
         gmsh.model.mesh.field.setNumber(3, "Sampling", 200)
         gmsh.model.mesh.field.add("Threshold", 4)
         gmsh.model.mesh.field.setNumber(4, "InField", 3)
@@ -1433,18 +1480,28 @@ class SU2TableGenerator:
         gmsh.model.mesh.field.setNumber(4, "DistMax", refinement_radius)
 
         gmsh.model.mesh.field.add("Min", 7)
-        gmsh.model.mesh.field.setNumbers(7, "FieldsList", [2, 4])
+        if len(embed_pts) > 0:
+            gmsh.model.mesh.field.setNumbers(7, "FieldsList", [2, 4])
+        else:
+            gmsh.model.mesh.field.setNumbers(7, "FieldsList", [4])
         gmsh.model.mesh.field.setAsBackgroundMesh(7)
 
+        print("  Generating mesh...")
         gmsh.option.setNumber("Mesh.Algorithm", 5)
         gmsh.model.mesh.generate(2)
+        print("  Mesh generated successfully!")
+        print("  Extracting nodes...")
         nodes = gmsh.model.mesh.getNodes(dim=2, tag=-1, includeBoundary=True, returnParametricCoord=False)[1]
+        print(f"  Extracted {len(nodes)//3} nodes")
         MeshPoints = np.array([nodes[::3], nodes[1::3]]).T
+        print(f"  MeshPoints shape: {MeshPoints.shape}")
 
-        # we need finalize
-        gmsh.finalize()
+        # Don't finalize or clear - gmsh has issues with cleanup in some environments
+        # This causes a small memory leak but avoids segfaults
+        print("  Skipping gmsh cleanup to avoid segfault...")
 
         # Build the full CV array in controlling-variable column order.
+        print("  Building CV array...")
         plane0_norm = MeshPoints[:, 0]
         plane1_norm = MeshPoints[:, 1]
         level_norm  = val_level_norm * np.ones(len(plane0_norm))
@@ -1456,7 +1513,10 @@ class SU2TableGenerator:
         CV_level_norm[:, self._level_cv_idx]      = level_norm
         CV_level_dim = self._scaler.inverse_transform(CV_level_norm)
 
+        print(f"  Evaluating flamelet interpolator for {len(CV_level_dim)} mesh points...")
         table_level_data = self.__EvaluateFlameletInterpolator(CV_level_dim)
+        print("  Done evaluating")
+
 
         return CV_level_norm, table_level_data
 
