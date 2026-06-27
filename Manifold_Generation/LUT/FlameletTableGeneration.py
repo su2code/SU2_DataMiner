@@ -213,6 +213,11 @@ class SU2TableGenerator:
     _max_refinement_seeds:int = 500  # Maximum number of seed points passed to gmsh after subsampling.
     _curvature_grid_resolution:int = 800  # Grid resolution (NxN) for computing curvature/gradient indicators.
 
+    _delta_z_bin:float = 0.01  # Z-bin half-width for filtering nearest neighbors to same-Z region.
+    _nn_filtered_points:int = 5  # Minimum number of nearest neighbors to keep after Z-direction filtering.
+    _nn_edgesize_scaling:float = 5.0  # Scaling factor: spatial filter threshold = edge_size * nn_edgesize_scaling.
+    _z_filter_factor:float = 0.5  # Factor for Z-direction filter: Z_threshold = z_filter_factor * delta_z_bin.
+
     _table_nodes = []       # Progress variable, total enthalpy, and mixture fraction node values for each table level.
     _table_nodes_norm = []  # Normalized table nodes for each level.
     _table_connectivity = []    # Table node connectivity per table level.
@@ -408,6 +413,63 @@ class SU2TableGenerator:
         if n_points < 50:
             raise Exception("Grid resolution should be at least 50 points per dimension.")
         self._curvature_grid_resolution = n_points
+        return
+
+    def SetZBinWidth(self, delta_z:float):
+        """Set the Z-bin half-width for Z-aware nearest neighbor filtering.
+
+        Reduces extrapolation by restricting neighbors to points within Z ± delta_z.
+        Helps improve table quality in regions with sparse same-Z data.
+
+        :param delta_z: Z-bin half-width (normalized [0, 1] or physical units).
+        :type delta_z: float
+        :raises Exception: if delta_z is not positive.
+        """
+        if delta_z <= 0:
+            raise Exception("Z-bin width should be positive.")
+        self._delta_z_bin = delta_z
+        return
+
+    def SetNNFilteredPoints(self, n_keep:int):
+        """Set the minimum number of nearest neighbors to keep after Z-direction filtering.
+
+        :param n_keep: minimum neighbors to keep after Z-filter (default 5).
+        :type n_keep: int
+        :raises Exception: if n_keep is less than 1.
+        """
+        if n_keep < 1:
+            raise Exception("Minimum filtered neighbors should be at least 1.")
+        self._nn_filtered_points = n_keep
+        return
+
+    def SetNNEdgeSizeScaling(self, scaling:float):
+        """Set the scaling factor for spatial filtering thresholds.
+
+        Spatial threshold = edge_size × scaling. Higher values relax spatial filter
+        (use more distant neighbors), lower values tighten it (require closer neighbors).
+
+        :param scaling: scaling factor (default 5.0).
+        :type scaling: float
+        :raises Exception: if scaling is not positive.
+        """
+        if scaling <= 0:
+            raise Exception("NN edge size scaling should be positive.")
+        self._nn_edgesize_scaling = scaling
+        return
+
+    def SetZFilterFactor(self, factor:float):
+        """Set the reduction factor for Z-direction filtering threshold.
+
+        Z_threshold = factor × delta_z_bin. Controls how aggressively to filter
+        neighbors in Z-direction (0.5 = allow neighbors within half the Z-bin).
+
+        :param factor: reduction factor (default 0.5, range typically 0.1 to 1.0).
+        :type factor: float
+        :raises Exception: if factor is not in (0, 1].
+        """
+        if factor <= 0 or factor > 1.0:
+            raise Exception("Z filter factor should be in (0, 1].")
+        self._z_filter_factor = factor
         return
 
     def SetTableAxes(self, level_cv_name:str, plane_cv_names:list[str]):
@@ -616,13 +678,119 @@ class SU2TableGenerator:
         print("Done!")
         return
 
-    def __EvaluateFlameletInterpolator(self, CV_unscaled:np.ndarray):
-        if self._is_2D_table and self._scaler_2d is not None:
-            CV_scaled = self._scaler_2d.transform(CV_unscaled[:, self._plane_cv_idxs])
-        else:
-            CV_scaled = self._scaler.transform(CV_unscaled)
-        data_interp = self._lookup_tree(q=CV_scaled,nnear=self._n_near,p=self._p_fac)
-        return data_interp
+    def __EvaluateFlameletInterpolator(self, CV_unscaled:np.ndarray,
+                                       apply_z_filtering:bool=False,
+                                       mesh_nodes_norm:np.ndarray=None,
+                                       mesh_simplices:np.ndarray=None):
+        """
+        Evaluate flamelet interpolator with optional Z-bin filtering for mesh nodes.
+
+        :param CV_unscaled: Controlling variable values (PV, H, Z).
+        :param apply_z_filtering: If True, apply 2-stage Z-bin filtering (Stage 3).
+        :param mesh_nodes_norm: Normalized mesh nodes (for computing connected_edge_distance).
+        :param mesh_simplices: Delaunay triangulation simplices (for computing connected_edge_distance).
+        :return: Interpolated flamelet data.
+        """
+        from scipy.spatial import cKDTree
+
+        if not apply_z_filtering:
+            # Original behavior: no Z-bin filtering
+            if self._is_2D_table and self._scaler_2d is not None:
+                CV_scaled = self._scaler_2d.transform(CV_unscaled[:, self._plane_cv_idxs])
+            else:
+                CV_scaled = self._scaler.transform(CV_unscaled)
+            data_interp = self._lookup_tree(q=CV_scaled, nnear=self._n_near, p=self._p_fac)
+            return data_interp
+
+        # ===== STAGE 3: Mesh Node Evaluation with Z-bin Filtering =====
+
+        if mesh_nodes_norm is None or mesh_simplices is None:
+            raise ValueError("mesh_nodes_norm and mesh_simplices required for Z-filtered evaluation")
+
+        level_cv_idx = self._level_cv_idx
+        p0_idx = self._plane_cv_idxs[0]
+        p1_idx = self._plane_cv_idxs[1]
+
+        # Extract Z values for Z-bin filtering
+        z_values = self._D_full[:, level_cv_idx]
+        z_target = CV_unscaled[0, level_cv_idx]  # Z value of first mesh node (should be constant for all)
+        mask_z_bin = np.abs(z_values - z_target) <= self._delta_z_bin
+        D_z_bin = self._D_full[mask_z_bin]
+
+        if len(D_z_bin) == 0:
+            raise ValueError(f"Empty Z-bin at Z={z_target} ± {self._delta_z_bin}. Increase delta_z_bin parameter.")
+
+        print(f"  Z-bin filtering for mesh: {len(D_z_bin)} of {len(self._D_full)} points in Z ± {self._delta_z_bin}")
+
+        # Check if 2D scaler is available (multi-Z datasets use 3D scaler only)
+        if self._scaler_2d is None:
+            print(f"  2D scaler not available (multi-Z dataset). Skipping Z-bin filtering, using standard 3D interpolation.")
+            data_interp = self._lookup_tree(q=self._scaler.transform(CV_unscaled), nnear=self._n_near, p=self._p_fac)
+            return data_interp
+
+        # Build temporary 2D (PV, H) k-d tree from Z-bin data
+        CV_2d_bin = D_z_bin[:, [p0_idx, p1_idx]]
+        CV_2d_bin_norm = self._scaler_2d.transform(CV_2d_bin)
+        kdtree_2d = cKDTree(CV_2d_bin_norm)
+
+        # Compute connected_edge_distance for each mesh node
+        # connected_edge_distance = max euclidean distance to Delaunay neighbors
+        n_mesh_nodes = len(mesh_nodes_norm)
+        connected_edge_distances = np.zeros(n_mesh_nodes)
+
+        for i_node in range(n_mesh_nodes):
+            # Find which simplices contain this node
+            simplex_idxs = np.any(mesh_simplices == i_node, axis=1)
+            neighbors = np.unique(mesh_simplices[simplex_idxs])
+            neighbors = neighbors[neighbors != i_node]  # Remove self
+
+            if len(neighbors) > 0:
+                # Compute distances to all connected neighbors
+                dist_to_neighbors = np.linalg.norm(
+                    mesh_nodes_norm[neighbors] - mesh_nodes_norm[i_node], axis=1
+                )
+                connected_edge_distances[i_node] = dist_to_neighbors.max()
+            else:
+                connected_edge_distances[i_node] = 1e-3  # Fallback for isolated nodes
+
+        # For each mesh node, apply 2-stage filtering and interpolate
+        Q_interp_list = []
+        insufficient_count = 0
+        for i, mesh_node in enumerate(mesh_nodes_norm):
+            if (i + 1) % 1000 == 0:
+                print(f"    Processed {i+1}/{len(mesh_nodes_norm)} mesh nodes")
+
+            # Query nearest neighbors in (PV, H) space (candidate pool)
+            distances_2d, indices_20 = kdtree_2d.query(mesh_node, k=min(self._n_near, len(D_z_bin)))
+
+            # Get Z distances for these neighbors
+            z_neighbors = D_z_bin[indices_20, level_cv_idx]
+            z_distances = np.abs(z_neighbors - z_target)
+
+            # Apply 2-stage filtering with scaled connected_edge_distance as spatial threshold
+            spatial_threshold = connected_edge_distances[i] * self._nn_edgesize_scaling
+            filtered_idx, had_insufficient = self.__FilterNearestNeighbors_2Stage(
+                indices_20, distances_2d, z_distances, spatial_threshold
+            )
+            if had_insufficient:
+                insufficient_count += 1
+
+            # IDW interpolate using filtered neighbors
+            filtered_data = D_z_bin[filtered_idx]
+            filtered_distances = distances_2d[filtered_idx]
+
+            # Inverse distance weighting
+            with np.errstate(divide='ignore', invalid='ignore'):
+                weights = 1.0 / np.power(filtered_distances + 1e-16, self._p_fac)
+                weights /= weights.sum()
+            q_val = weights @ filtered_data
+
+            Q_interp_list.append(q_val)
+
+        print(f"  Mesh nodes without sufficient neighbors within scaled edge size: {insufficient_count}/{len(mesh_nodes_norm)} ({100*insufficient_count/len(mesh_nodes_norm):.1f}%)")
+
+        Q_interp = np.array(Q_interp_list)
+        return Q_interp
 
     def PlotTableSlices(self,
                         x_cv: str,
@@ -742,9 +910,8 @@ class SU2TableGenerator:
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             print("  Saved: %s" % save_path)
-        if show:
-            plt.show()
-        plt.close(fig)
+        if not show:
+            plt.close(fig)
         return
 
     def VisualizeTableLevel(self, val_mix_frac:float, var_to_plot:str=None,
@@ -813,9 +980,8 @@ class SU2TableGenerator:
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             print("  Saved: %s" % save_path)
-        if show:
-            plt.show()
-        plt.close(fig)
+        if not show:
+            plt.close(fig)
         return
 
     def GenerateTableNodes(self):
@@ -1195,6 +1361,57 @@ class SU2TableGenerator:
                     DefaultSettings_FGM.name_mixfrac,
                     DefaultSettings_FGM.name_enth))
 
+    def __FilterNearestNeighbors_2Stage(self, neighbors_20_idx:np.ndarray, neighbor_distances_2d:np.ndarray,
+                                         neighbor_z_distances:np.ndarray, spatial_threshold:float):
+        """
+        Apply 2-stage filtering to nearest neighbors: spatial then Z-direction.
+
+        :param neighbors_20_idx: Indices of 20 nearest neighbors in the flamelet data.
+        :param neighbor_distances_2d: Euclidean distances in (PV, H) space for each neighbor.
+        :param neighbor_z_distances: Absolute Z-distance for each neighbor.
+        :param spatial_threshold: Threshold distance in (PV, H) space (scaled edge size).
+        :return: Tuple (filtered_neighbor_indices, had_insufficient_neighbors_flag)
+        """
+        # Sort by (PV, H) distance
+        sorted_idx_spatial = np.argsort(neighbor_distances_2d)
+
+        # FILTER STAGE 1 - Spatial: keep until (n_near - nn_filtered_points remain) OR (distance ≤ threshold)
+        stage1_target = self._n_near - self._nn_filtered_points
+        keep_spatial = []
+        for idx in sorted_idx_spatial:
+            keep_spatial.append(idx)
+            if len(keep_spatial) >= stage1_target or neighbor_distances_2d[idx] <= spatial_threshold:
+                break
+
+        had_insufficient = False
+        if len(keep_spatial) < stage1_target:
+            # Collect all within threshold
+            keep_spatial = [idx for idx in sorted_idx_spatial if neighbor_distances_2d[idx] <= spatial_threshold]
+            if not keep_spatial:
+                keep_spatial = list(sorted_idx_spatial[:stage1_target])
+                had_insufficient = True
+
+        # FILTER STAGE 2 - Z-direction: keep until (n_near - 2*nn_filtered_points remain) OR (|ΔZ| ≤ z_filter_factor×delta_z_bin)
+        keep_spatial_arr = np.array(keep_spatial)
+        z_threshold = self._z_filter_factor * self._delta_z_bin
+        stage2_target = self._n_near - 2 * self._nn_filtered_points
+
+        sorted_idx_z = keep_spatial_arr[np.argsort(neighbor_z_distances[keep_spatial_arr])]
+        keep_z = []
+        for idx in sorted_idx_z:
+            keep_z.append(idx)
+            if len(keep_z) >= stage2_target or neighbor_z_distances[idx] <= z_threshold:
+                break
+
+        if len(keep_z) < stage2_target:
+            # Collect all within Z threshold
+            keep_z = [idx for idx in sorted_idx_z if neighbor_z_distances[idx] <= z_threshold]
+            if not keep_z:
+                keep_z = list(sorted_idx_z[:stage2_target])
+
+        return np.array(keep_z, dtype=int), had_insufficient
+
+
     def __ComputeCurvatureZH(self):
         """Hull and refinement seeds for a (Z, h) table using the actual data cloud.
 
@@ -1204,11 +1421,18 @@ class SU2TableGenerator:
         counterflow flame data (h shifts by ~-4.7 MJ/kg from Z=0 to Z=1) and
         avoids generating mesh nodes outside the data support.
 
+        Applies 2-stage Z-bin filtering (spatial + Z-direction) to nearest-neighbor
+        queries to improve quality in sparse regions.
+
         Returns the same tuple as __ComputeCurvature but without CV_mesh and
         table_level_data (those are computed after meshing).
         """
+        from Interpolators import Invdisttree
+        from scipy.spatial import cKDTree
+
         p0_idx = self._plane_cv_idxs[0]   # MixtureFraction column
         p1_idx = self._plane_cv_idxs[1]   # EnthalpyTot column
+        level_cv_idx = self._level_cv_idx
 
         # Normalized 2D data cloud (use the 2D scaler built by __Rebuild2DInterpolator).
         ZH_dim  = self._D_full[:, [p0_idx, p1_idx]]
@@ -1219,9 +1443,26 @@ class SU2TableGenerator:
         hull_verts = ZH_norm[data_hull.vertices, :]    # (Nh, 2) normalized
         XY_hull    = hull_verts                        # passed to __Compute2DMesh
 
-        # Refinement seeds: high gradient of the refinement fields on a fine
-        # scatter over the actual data hull.  Sample the IDW tree on a regular
-        # grid clipped to the data hull using the Delaunay membership test.
+        # ===== STAGE 1: Refinement Field Evaluation on Analytical Grid =====
+
+        # Extract Z values for Z-bin filtering
+        z_values = self._D_full[:, level_cv_idx]
+        z_target = 0.0  # For (Z, h) tables at Z=0 normalized
+        mask_z_bin = np.abs(z_values - z_target) <= self._delta_z_bin
+        D_z_bin = self._D_full[mask_z_bin]
+
+        if len(D_z_bin) == 0:
+            raise ValueError(f"Empty Z-bin at Z={z_target} ± {self._delta_z_bin}. Increase delta_z_bin parameter.")
+
+        print(f"  Z-bin filtering: {len(D_z_bin)} of {len(self._D_full)} points in Z ± {self._delta_z_bin}")
+
+        # Build temporary 2D (PV, H) k-d tree from Z-bin data
+        CV_2d_bin = D_z_bin[:, [p0_idx, p1_idx]]
+        CV_2d_bin_norm = self._scaler_2d.transform(CV_2d_bin)
+        temp_tree_2d = Invdisttree(X=CV_2d_bin_norm, z=D_z_bin)
+
+        # Refine seeds: high gradient of the refinement fields on a fine scatter
+        # Sample on a regular grid clipped to the data hull.
         from scipy.spatial import Delaunay as _Delaunay
         hull_delaunay = _Delaunay(hull_verts)
 
@@ -1233,20 +1474,53 @@ class SU2TableGenerator:
         inside   = hull_delaunay.find_simplex(grid_pts) >= 0
         grid_in  = grid_pts[inside]                    # (M, 2) normalized
 
-        # Build full 3-column query for the IDW evaluator (level CV = 0).
-        n_cv    = len(self._controlling_variables)
-        CV_grid = np.zeros([len(grid_in), n_cv])
-        CV_grid[:, self._plane_cv_idxs[0]] = grid_in[:, 0]
-        CV_grid[:, self._plane_cv_idxs[1]] = grid_in[:, 1]
-        CV_grid[:, self._level_cv_idx]     = 0.0
-        # Inverse-transform to dimensional before evaluating interpolator.
-        # The 2D scaler maps (Z_norm, h_norm) → (Z, h); pad the 3rd column with 0.
-        CV_dim_2d = self._scaler_2d.inverse_transform(grid_in)
-        CV_dim    = np.zeros([len(grid_in), n_cv])
-        CV_dim[:, self._plane_cv_idxs[0]] = CV_dim_2d[:, 0]
-        CV_dim[:, self._plane_cv_idxs[1]] = CV_dim_2d[:, 1]
+        grid_spacing = 1.0 / n_grid  # Normalized grid spacing
+        scaled_spatial_threshold = grid_spacing * self._nn_edgesize_scaling
 
-        Q_interp = self.__EvaluateFlameletInterpolator(CV_dim)
+        # Build full 3-column CV array for evaluation
+        n_cv = len(self._controlling_variables)
+
+        # For each grid point, apply 2-stage filtering and interpolate
+        print(f"  Evaluating refinement field on {len(grid_in)} grid points with Z-bin filtering...")
+        print(f"    Spatial threshold (scaled): {scaled_spatial_threshold:.6f} = {grid_spacing:.6f} × {self._nn_edgesize_scaling}")
+        Q_interp_list = []
+
+        # Build k-d tree for distance queries on 2D data
+        kdtree_2d = cKDTree(CV_2d_bin_norm)
+
+        insufficient_count = 0
+        for i, grid_pt in enumerate(grid_in):
+            if (i + 1) % 50000 == 0:
+                print(f"    Processed {i+1}/{len(grid_in)} grid points")
+
+            # Query nearest neighbors in (PV, H) space (candidate pool)
+            distances_2d, indices_20 = kdtree_2d.query(grid_pt, k=min(self._n_near, len(D_z_bin)))
+
+            # Get Z distances for these neighbors
+            z_neighbors = D_z_bin[indices_20, level_cv_idx]
+            z_distances = np.abs(z_neighbors - z_target)
+
+            # Apply 2-stage filtering
+            filtered_idx, had_insufficient = self.__FilterNearestNeighbors_2Stage(
+                indices_20, distances_2d, z_distances, scaled_spatial_threshold
+            )
+            if had_insufficient:
+                insufficient_count += 1
+
+            # IDW interpolate using filtered neighbors
+            filtered_data = D_z_bin[filtered_idx]
+            filtered_distances = distances_2d[filtered_idx]
+
+            # Inverse distance weighting
+            with np.errstate(divide='ignore', invalid='ignore'):
+                weights = 1.0 / np.power(filtered_distances + 1e-16, self._p_fac)
+                weights /= weights.sum()
+            q_val = weights @ filtered_data
+
+            Q_interp_list.append(q_val)
+
+        Q_interp = np.array(Q_interp_list)
+        print(f"  Grid points without sufficient neighbors within scaled edge size: {insufficient_count}/{len(grid_in)} ({100*insufficient_count/len(grid_in):.1f}%)")
 
         missing = [f for f in self._refinement_fields if f not in self._Flamelet_Variables]
         if missing:
@@ -1272,6 +1546,7 @@ class SU2TableGenerator:
         level_norm = self._scaler.transform(np.zeros([1, n_cv]))[0, self._level_cv_idx]
 
         return XY_refinement, XY_hull, data_hull.area, level_norm
+
 
     def __ComputeCurvature(self, val_level:float):
         """
@@ -1513,8 +1788,18 @@ class SU2TableGenerator:
         CV_level_norm[:, self._level_cv_idx]      = level_norm
         CV_level_dim = self._scaler.inverse_transform(CV_level_norm)
 
+        # Compute Delaunay triangulation for connectivity (used for Stage 3 filtering)
+        print("  Computing Delaunay triangulation...")
+        Tria = Delaunay(MeshPoints[:, self._plane_cv_idxs])
+        mesh_simplices = Tria.simplices
+
         print(f"  Evaluating flamelet interpolator for {len(CV_level_dim)} mesh points...")
-        table_level_data = self.__EvaluateFlameletInterpolator(CV_level_dim)
+        table_level_data = self.__EvaluateFlameletInterpolator(
+            CV_level_dim,
+            apply_z_filtering=True,
+            mesh_nodes_norm=MeshPoints,
+            mesh_simplices=mesh_simplices
+        )
         print("  Done evaluating")
 
 
