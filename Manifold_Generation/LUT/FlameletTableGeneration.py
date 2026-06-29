@@ -691,6 +691,8 @@ class SU2TableGenerator:
         :param mesh_simplices: Delaunay triangulation simplices (for computing connected_edge_distance).
         :return: Interpolated flamelet data.
         """
+        if apply_z_filtering:
+            print(f"[DEBUG] __EvaluateFlameletInterpolator() called with apply_z_filtering=True")
         from scipy.spatial import cKDTree
 
         if not apply_z_filtering:
@@ -722,15 +724,26 @@ class SU2TableGenerator:
 
         print(f"  Z-bin filtering for mesh: {len(D_z_bin)} of {len(self._D_full)} points in Z ± {self._delta_z_bin}")
 
-        # Check if 2D scaler is available (multi-Z datasets use 3D scaler only)
+        # Visualization: Stage 3 - Z-bin used for mesh node evaluation
+        try:
+            vis_path_3 = os.path.join(self._savedir, "zbin_stage3_mesh_eval.png") if hasattr(self, '_savedir') else None
+            print(f"  [DEBUG] Stage 3 visualization: savedir={self._savedir if hasattr(self, '_savedir') else 'N/A'}, path={vis_path_3}")
+            self.__VisualizeFlameletData3D(D_z_bin, f"Stage 3: Z-bin for Mesh Evaluation (Z={z_target:.6f} ± {self._delta_z_bin:.6f})", save_path=vis_path_3)
+        except Exception as e:
+            print(f"  [ERROR] Stage 3 visualization failed: {e}")
+
+        # Check if 2D scaler is available; if not (multi-Z), build temporary one from Z-bin data
         if self._scaler_2d is None:
-            print(f"  2D scaler not available (multi-Z dataset). Skipping Z-bin filtering, using standard 3D interpolation.")
-            data_interp = self._lookup_tree(q=self._scaler.transform(CV_unscaled), nnear=self._n_near, p=self._p_fac)
-            return data_interp
+            print(f"  2D scaler not available (multi-Z dataset). Building temporary 2D scaler from Z-bin data for filtering...")
+            CV_2d_bin = D_z_bin[:, [p0_idx, p1_idx]]
+            scaler_2d_temp = MinMaxScaler()
+            CV_2d_bin_norm = scaler_2d_temp.fit_transform(CV_2d_bin)
+        else:
+            CV_2d_bin = D_z_bin[:, [p0_idx, p1_idx]]
+            CV_2d_bin_norm = self._scaler_2d.transform(CV_2d_bin)
+            scaler_2d_temp = self._scaler_2d
 
         # Build temporary 2D (PV, H) k-d tree from Z-bin data
-        CV_2d_bin = D_z_bin[:, [p0_idx, p1_idx]]
-        CV_2d_bin_norm = self._scaler_2d.transform(CV_2d_bin)
         kdtree_2d = cKDTree(CV_2d_bin_norm)
 
         # Compute connected_edge_distance for each mesh node
@@ -760,8 +773,16 @@ class SU2TableGenerator:
             if (i + 1) % 1000 == 0:
                 print(f"    Processed {i+1}/{len(mesh_nodes_norm)} mesh nodes")
 
+            # For multi-Z datasets with temporary scaler: transform mesh_node coords using temp scaler
+            if self._scaler_2d is None:
+                mesh_node_2d_phys = mesh_node[[p0_idx, p1_idx]]
+                mesh_node_2d_norm = scaler_2d_temp.transform([mesh_node_2d_phys])[0]
+            else:
+                # For single-Z, mesh_node is already in consistent scaler space
+                mesh_node_2d_norm = mesh_node[[p0_idx, p1_idx]]
+
             # Query nearest neighbors in (PV, H) space (candidate pool)
-            distances_2d, indices_20 = kdtree_2d.query(mesh_node, k=min(self._n_near, len(D_z_bin)))
+            distances_2d, indices_20 = kdtree_2d.query(mesh_node_2d_norm, k=min(self._n_near, len(D_z_bin)))
 
             # Get Z distances for these neighbors
             z_neighbors = D_z_bin[indices_20, level_cv_idx]
@@ -1259,9 +1280,16 @@ class SU2TableGenerator:
 
         # For the (Z, h) plane case use the actual data hull to avoid extrapolation
         # outside the skewed parallelogram-shaped data support.
-        if (self._level_cv_name == DefaultSettings_FGM.name_pv and
-                self._plane_cv_names[0] == DefaultSettings_FGM.name_mixfrac and
-                self._plane_cv_names[1] == DefaultSettings_FGM.name_enth):
+        # Handle both configurations: (Z,H) plane with PV level OR (PV,H) plane with Z level
+        # BUT only if _scaler_2d is available (single-Z tables; multi-Z tables use regular path)
+        is_zh_table = (self._level_cv_name == DefaultSettings_FGM.name_pv and
+                       self._plane_cv_names[0] == DefaultSettings_FGM.name_mixfrac and
+                       self._plane_cv_names[1] == DefaultSettings_FGM.name_enth)
+        is_pvh_with_z_level = (self._level_cv_name == DefaultSettings_FGM.name_mixfrac and
+                               self._plane_cv_names[0] == DefaultSettings_FGM.name_pv and
+                               self._plane_cv_names[1] == DefaultSettings_FGM.name_enth)
+
+        if (is_zh_table or is_pvh_with_z_level) and self._scaler_2d is not None:
             Coord_refinement, Coord_hull, hull_area, level_norm = \
                 self.__ComputeCurvatureZH()
         else:
@@ -1427,6 +1455,7 @@ class SU2TableGenerator:
         Returns the same tuple as __ComputeCurvature but without CV_mesh and
         table_level_data (those are computed after meshing).
         """
+        print(f"[DEBUG] __ComputeCurvatureZH() called for (Z, h) table")
         from Interpolators import Invdisttree
         from scipy.spatial import cKDTree
 
@@ -1455,6 +1484,14 @@ class SU2TableGenerator:
             raise ValueError(f"Empty Z-bin at Z={z_target} ± {self._delta_z_bin}. Increase delta_z_bin parameter.")
 
         print(f"  Z-bin filtering: {len(D_z_bin)} of {len(self._D_full)} points in Z ± {self._delta_z_bin}")
+
+        # Visualization: Stage 1 - Initial Z-bin data
+        try:
+            vis_path_1 = os.path.join(self._savedir, "zbin_stage1_initial.png") if hasattr(self, '_savedir') else None
+            print(f"  [DEBUG] Stage 1 visualization: savedir={self._savedir if hasattr(self, '_savedir') else 'N/A'}, path={vis_path_1}")
+            self.__VisualizeFlameletData3D(D_z_bin, f"Stage 1: Initial Z-bin Data (Z={z_target:.6f} ± {self._delta_z_bin:.6f})", save_path=vis_path_1)
+        except Exception as e:
+            print(f"  [ERROR] Stage 1 visualization failed: {e}")
 
         # Build temporary 2D (PV, H) k-d tree from Z-bin data
         CV_2d_bin = D_z_bin[:, [p0_idx, p1_idx]]
@@ -1545,6 +1582,14 @@ class SU2TableGenerator:
         # level_norm in the 3D scaler space: PV=0 normalised.
         level_norm = self._scaler.transform(np.zeros([1, n_cv]))[0, self._level_cv_idx]
 
+        # Visualization: Stage 1b - Data after 2-stage filtering (before mesh generation)
+        try:
+            vis_path_1b = os.path.join(self._savedir, "zbin_stage1_after_filtering.png") if hasattr(self, '_savedir') else None
+            print(f"  [DEBUG] Stage 1b visualization: savedir={self._savedir if hasattr(self, '_savedir') else 'N/A'}, path={vis_path_1b}")
+            self.__VisualizeFlameletData3D(D_z_bin, f"Stage 1b: Z-bin After 2-Stage Filtering (spatial+Z)", save_path=vis_path_1b)
+        except Exception as e:
+            print(f"  [ERROR] Stage 1b visualization failed: {e}")
+
         return XY_refinement, XY_hull, data_hull.area, level_norm
 
 
@@ -1566,6 +1611,24 @@ class SU2TableGenerator:
 
         p_idxs = self._plane_cv_idxs
         n_cv   = len(self._controlling_variables)
+        level_cv_idx = self._level_cv_idx
+
+        # For multi-Z datasets: Extract and visualize Z-bin at this level
+        z_target = val_level
+        mask_z_bin = np.abs(self._D_full[:, level_cv_idx] - z_target) <= self._delta_z_bin
+        D_z_bin = self._D_full[mask_z_bin]
+
+        if len(D_z_bin) > 0:
+            print(f"  Z-bin filtering: {len(D_z_bin)} of {len(self._D_full)} points in Z ± {self._delta_z_bin}")
+            # Visualization: Stage 1 - Initial Z-bin data (multi-Z case)
+            try:
+                vis_path_1 = os.path.join(self._savedir, "zbin_stage1_initial_multiz.png") if hasattr(self, '_savedir') else None
+                print(f"  [DEBUG] Stage 1 (multi-Z) visualization: savedir={self._savedir if hasattr(self, '_savedir') else 'N/A'}, path={vis_path_1}")
+                self.__VisualizeFlameletData3D(D_z_bin, f"Stage 1: Initial Z-bin Data - Multi-Z (Z={z_target:.6f} ± {self._delta_z_bin:.6f})", save_path=vis_path_1)
+            except Exception as e:
+                print(f"  [ERROR] Stage 1 (multi-Z) visualization failed: {e}")
+        else:
+            print(f"  Warning: Empty Z-bin at Z={z_target} ± {self._delta_z_bin}")
 
         # Define 2D grid between minimum and maximum plane controlling variables.
         n_grid = self._curvature_grid_resolution
@@ -1604,8 +1667,22 @@ class SU2TableGenerator:
         if missing:
             raise Exception("Refinement field(s) not found in flamelet data: %s. "
                             "Available fields: %s" % (missing, self._Flamelet_Variables))
-        print(f"  Evaluating flamelet interpolator for {len(CV_grid_init)} points...")
-        Q_interp = self.__EvaluateFlameletInterpolator(CV_unscaled=CV_grid_init)
+        print(f"  Evaluating flamelet interpolator for {len(CV_grid_init)} points with Z-bin filtering...")
+
+        # For multi-Z datasets, compute grid Delaunay for connectivity-based thresholds
+        if self._scaler_2d is None:
+            # Build Delaunay on grid for connected edge distances
+            grid_delaunay = Delaunay(CV_grid_norm_init[:, p_idxs])
+            Q_interp = self.__EvaluateFlameletInterpolator(
+                CV_unscaled=CV_grid_init,
+                apply_z_filtering=True,
+                mesh_nodes_norm=CV_grid_norm_init,
+                mesh_simplices=grid_delaunay.simplices
+            )
+        else:
+            # Single-Z: use standard evaluation
+            Q_interp = self.__EvaluateFlameletInterpolator(CV_unscaled=CV_grid_init)
+
         print(f"  Done evaluating interpolator")
         combined_indicator = np.zeros(n_pts)
         for field in self._refinement_fields:
@@ -1645,6 +1722,15 @@ class SU2TableGenerator:
 
         val_level_norm = CV_grid_norm[0, self._level_cv_idx]
 
+        # Visualization: Stage 1b - Data after grid evaluation (multi-Z case)
+        if len(D_z_bin) > 0:
+            try:
+                vis_path_1b = os.path.join(self._savedir, "zbin_stage1b_after_filtering_multiz.png") if hasattr(self, '_savedir') else None
+                print(f"  [DEBUG] Stage 1b (multi-Z) visualization: savedir={self._savedir if hasattr(self, '_savedir') else 'N/A'}, path={vis_path_1b}")
+                self.__VisualizeFlameletData3D(D_z_bin, f"Stage 1b: Z-bin After Grid Evaluation - Multi-Z", save_path=vis_path_1b)
+            except Exception as e:
+                print(f"  [ERROR] Stage 1b (multi-Z) visualization failed: {e}")
+
         return XY_refinement, XY_hull, hull.area, val_level_norm, CV_grid, Q_interp
 
     def __ComputeSourceTermGradient(self, Q_grid:np.ndarray[float]) -> np.ndarray:
@@ -1653,6 +1739,71 @@ class SU2TableGenerator:
         dQdy, dQdx = np.gradient(Q_norm)
         dQ_mag = np.sqrt(np.power(dQdy, 2) + np.power(dQdx, 2))
         return (dQ_mag / (np.max(dQ_mag) + 1e-32)).flatten()
+
+    def __VisualizeFlameletData3D(self, data:np.ndarray, title:str, save_path:str=None, skip_points:int=10):
+        """Nijso: For debugging: Create a 3D scatter plot of flamelet data (PV, H, T) colored by Z.
+
+        :param data: Flamelet data array (N, n_vars).
+        :param title: Title for the plot.
+        :param save_path: If provided, save to this file instead of showing.
+        :param skip_points: Plot every skip_points'th point to reduce clutter.
+        """
+        try:
+            from mpl_toolkits.mplot3d import Axes3D
+        except ImportError:
+            print(f"    Skipping 3D visualization (matplotlib 3D not available): {title}")
+            return
+
+        p0_idx = self._plane_cv_idxs[0]  # PV or Z
+        p1_idx = self._plane_cv_idxs[1]  # H
+        level_idx = self._level_cv_idx   # Z or PV
+
+        # Assume Temperature is near the end of the data columns (check based on _Flamelet_Variables)
+        try:
+            temp_idx = self._Flamelet_Variables.index('Temperature')
+        except ValueError:
+            print(f"    Skipping 3D visualization (Temperature column not found): {title}")
+            return
+
+        subset_plot = data[::skip_points]
+
+        if len(subset_plot) == 0:
+            print(f"    Skipping 3D visualization (empty data): {title}")
+            return
+
+        fig = plt.figure(figsize=(12, 9))
+        ax = fig.add_subplot(111, projection='3d')
+
+        scatter = ax.scatter(
+            subset_plot[:, p0_idx],
+            subset_plot[:, p1_idx],
+            subset_plot[:, temp_idx],
+            c=subset_plot[:, level_idx],
+            cmap='coolwarm',
+            marker='o',
+            s=20,
+            alpha=0.6,
+            edgecolors='k',
+            linewidth=0.3
+        )
+
+        ax.set_xlabel(self._plane_cv_names[0], fontsize=12)
+        ax.set_ylabel(self._plane_cv_names[1], fontsize=12)
+        ax.set_zlabel('Temperature (K)', fontsize=12)
+        ax.set_title(f'{title}\n({len(subset_plot)}/{len(data)} points shown, SKIP={skip_points})', fontsize=14)
+
+        cbar = fig.colorbar(scatter, ax=ax, pad=0.1, shrink=0.8)
+        cbar.set_label(self._level_cv_name, fontsize=11)
+
+        ax.view_init(elev=20, azim=45)
+        plt.tight_layout()
+
+        if save_path:
+            fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"    Saved visualization: {save_path}")
+        else:
+            plt.show()
+        plt.close(fig)
 
     def __ComputeSourceTermCurvature(self, Q_grid:np.ndarray[float]) -> np.ndarray:
         """Return the flattened normalized curvature magnitude for a 2D field array."""

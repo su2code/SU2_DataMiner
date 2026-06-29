@@ -24,24 +24,33 @@ def _show(fig_fn, *args, **kwargs):
 Config = Config_FGM("TableGeneration.cfg")
 
 # Initializing table module and pre-process interpolator.
-Tgen = SU2TableGenerator(Config, n_near=14, p_fac=1)
+Tgen = SU2TableGenerator(Config, n_near=20, p_fac=1)
 
 # Performance optimizations
-Tgen.SetNCores(4)  # Enable parallel processing with 4 cores
+#Tgen.SetNCores(4)  # Enable parallel processing with 4 cores
+
+# nijso not implemented in develop
 Tgen.SetCurvatureGridResolution(300)  # Reduce grid resolution for faster curvature computation (default: 800)
 
+# Z-bin intelligent filtering for nearest neighbor interpolation (improves quality in sparse regions)
+Tgen.SetZBinWidth(0.0025)  # Z-bin half-width for filtering neighbors to same-Z region (default: 0.01)
+Tgen.SetNNFilteredPoints(3)  # Minimum neighbors to keep after Z-direction filtering (default: 5)
+Tgen.SetNNEdgeSizeScaling(5.0)          # scaling for the edge size limit, increase if you need more NN in the pv,h direction
+Tgen.SetZFilterFactor(0.5)              #
+
 #
-Tgen.SetEquivalenceRatioLimits(phi_min=0.30, phi_max=0.90)
-Tgen.SetNTableLevels(3)
+Tgen.SetEquivalenceRatioLimits(phi_min=0.25, phi_max=1.25)
+#Tgen.SetNTableLevels(50)
+Tgen.SetNTableLevels(10)
 Tgen.SetRefinementFields(["ProdRateTot_PV","Heat_Release"])
 Tgen.SetRefinementMethod("gradient")
 
 # coarse
-#Tgen.SetBaseCellSize(1e-2)
-#Tgen.SetRefinedCellSize(0.5e-2)
-#Tgen.SetRefinementRadius(2.0e-2)
-#Tgen.SetMaxRefinementSeeds(500)
-#Tgen.SetHullCellSize(1.0e-2)
+Tgen.SetBaseCellSize(1e-2)
+Tgen.SetRefinedCellSize(0.5e-2)
+Tgen.SetRefinementRadius(1.0e-2)
+Tgen.SetMaxRefinementSeeds(500)
+Tgen.SetHullCellSize(1.0e-2)
 
 # Generate table connectivity and interpolate flamelet data.
 Tgen.GenerateTableNodes()
@@ -57,7 +66,7 @@ _show(Tgen.PlotTableSlices,
     slice_cv    = "EnthalpyTot",
     slice_range = None,
     n_slices    = 10,
-    n_x_points  = 300,
+    n_x_points  = 600,
     save_path   = _save("T_vs_Z_slices.png"))
 
 # Heat_Release(Z) for the same 10 enthalpy levels.
@@ -67,11 +76,11 @@ _show(Tgen.PlotTableSlices,
     slice_cv    = "EnthalpyTot",
     slice_range = None,
     n_slices    = 10,
-    n_x_points  = 300,
+    n_x_points  = 600,
     save_path   = _save("HRR_vs_Z_slices.png"))
 
-# Visualize the table mesh and reaction rate at phi = 0.55.
-cv_target = Config.GetUnburntScalars(equivalence_ratio=0.60, temperature=300.0)
+# Visualize the table mesh and reaction rate at phi = 0.6.
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.6, temperature=300.0)
 pv_target = cv_target[0]
 z_target  = cv_target[2]
 print("Target unburnt progress variable:", pv_target)
@@ -93,8 +102,20 @@ _show(Tgen.VisualizeTableLevel, z_target, "ProdRateTot_PV",
 _show(Tgen.VisualizeTableLevel, z_target, "ProdRateTot_PV",
       plot_3d=True, show_grid=False, save_path=_save("ProdRate_phi060_3d.png"))
 
+
+# Visualize the table mesh and reaction rate at phi = 0.65.
+cv_target = Config.GetUnburntScalars(equivalence_ratio=0.65, temperature=300.0)
+pv_target = cv_target[0]
+z_target  = cv_target[2]
+print("Target unburnt progress variable:", pv_target)
+# 3D surface of Temperature (with wireframe):
+_show(Tgen.VisualizeTableLevel, z_target, "Temperature",
+      plot_3d=True, show_grid=True, save_path=_save("T_phi065_3d.png"))
+
 # from 99% of the max progress variable, set the source terms of H2 to zero
 # if the absolute value of the source terms is |S| < 0.1
+
+# not in branch main yet
 Tgen.ClampSourceTerms(species_list=["H2", "H2O"], pv_frac=0.99, abs_tol=0.1)
 
 # Write SU2 .drg table file (Dragon v1.0.1 format, 2D).

@@ -13,20 +13,22 @@ Config.SetReactionMechanism('h2o2.yaml')
 Config.DefineMixtureStatus(False)  # Use equivalence ratio, not mixture fraction
 
 Config.SetMixtureBounds(0.25, 1.25)
-Config.SetNpMix(201)
+Config.SetNpMix(51)
 Config.SetUnbTempBounds(250, 500)
 Config.SetNpTemp(26)
-Config.SetNpMdot(50)          # burner flames across the mdot range
-Config.SetMdotDHTarget(10000.0)   # J/kg target ΔH between flames
-Config.SetNpMdotExtra(50)    # synthetic flames linearly interpolated from lowest-mdot burner flame to equilibrium
+
+# not in branch main
+Config.SetNpMdot(20)          # burner flames across the mdot range
+Config.SetMdotDHTarget(20000.0)   # J/kg target ΔH between flames
+Config.SetNpMdotExtra(20)    # synthetic flames linearly interpolated from lowest-mdot burner flame to equilibrium
 Config.SetInitialGridLength(0.2)  # Initial flamelet domain length in metres
 
 # Explicitly select which flamelet types to generate.
 Config.RunFreeFlames(True)
-Config.RunBurnerFlames(False)
-Config.RunExtraInterpolatedBurnerFlames(False)
+Config.RunBurnerFlames(True)
+Config.RunExtraInterpolatedBurnerFlames(True)
 Config.SetSrcInterpExponent(1.5)   # Decay of interpolated flamelets
-Config.RunEquilibrium(False)
+Config.RunEquilibrium(True)
 
 
 
@@ -35,8 +37,10 @@ Config.SetTransportModel('mixture-averaged')
 Config.SetConcatenationFileHeader("LUT_data")
 
 # Setting the Efimov progress variable definition.
+#Config.SetProgressVariableDefinition(pv_species=['H2', 'H', 'O2', 'O', 'H2O', 'OH', 'H2O2', 'HO2'],\
+#                                     pv_weights=[ 0.0, 0.0,  0.0, 0.0,   1.0,  0.0,    0.0,  0.0])
 Config.SetProgressVariableDefinition(pv_species=['H2', 'H', 'O2', 'O', 'H2O', 'OH', 'H2O2', 'HO2'],\
-                                     pv_weights=[ 0.0, 0.0,  0.0, 0.0,   1.0,  0.0,    0.0,  0.0])
+                                     pv_weights=[-7.36, -23.01, -2.04, -4.8, 1.83, -15.31, -57.02, 24.55])
 
 # Preparing flamelet output directory.
 flamelet_data_dir = os.getcwd() + "/flamelet_data/"
