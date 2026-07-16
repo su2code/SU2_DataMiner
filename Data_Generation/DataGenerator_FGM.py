@@ -76,7 +76,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
     __define_equivalence_ratio:bool = not DefaultSettings_FGM.run_mixture_fraction # Define unburnt mixture via the equivalence ratio
     __unb_mixture_status:list[float] = []
     __flameletSolverDict:Dict[str, FlameletSolver_Cantera]
-    
+
     __run_freeflames:bool = DefaultSettings_FGM.include_freeflames      # Run adiabatic flame computations
     __run_extra_interpolated_burnerflames:bool = True       # Run extra interpolated burner-stabilized flame computations
     __run_burnerflames:bool = DefaultSettings_FGM.include_burnerflames    # Run burner stabilized flame computations
@@ -138,6 +138,10 @@ class DataGenerator_Cantera(DataGenerator_Base):
     def SetLoglevel(self, loglevel:int=0):
         """Set Cantera solver verbosity level (0=silent)."""
         self.__loglevel = loglevel
+        # Propagate loglevel to all existing flamelet solvers
+        for solver in self.__flameletSolverDict.values():
+            solver.setCanteraVerbose(loglevel)
+            solver.setSolverVerbose(loglevel)
 
     def SetInitialGridLength(self, length:float):
         """Set the initial domain length (in metres) for new flamelet grids."""
@@ -145,10 +149,11 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
     def setRefinementCriteria(self, flamelet_type:str, ratio:float=3, slope:float=0.03, curve:float=0.03, prune:float=0.01):
         if flamelet_type not in self.__flameletSolverDict.keys():
-            raise Exception("%s is included in the available flamelet types" % flamelet_type)
+            available = list(self.__flameletSolverDict.keys())
+            raise Exception("%s is NOT included in the available flamelet types. Available: %s" % (flamelet_type, available))
         self.__flameletSolverDict[flamelet_type].setGridRefinementCriteria(ratio, slope, curve, prune)
         return
-    
+
 
     def SetMdotDHTarget(self, dH_target:float):
         """Set the target enthalpy step between successive burner-stabilized flamelets.
@@ -339,7 +344,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
             raise Exception("At least one mixture status value should be provided.")
         if any([phi < 0 for phi in mixture_values]):
             raise Exception("Mixture values should be strictly positive")
-        
+
         self.__unb_mixture_status = [phi for phi in mixture_values]
         return
 
@@ -390,7 +395,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
         if mix_status < 0:
             raise Exception("Mixture status value should be positive.")
-        
+
         correct_order = FlameletSolverDict.keys()
         for c in correct_order:
             if c in self.__flameletSolverDict.keys() and c != "COUNTERFLAME":
@@ -399,12 +404,12 @@ class DataGenerator_Cantera(DataGenerator_Base):
                 flameletSolver.solveForMixtureStatus(mix_status)
 
         return
-    
+
     def computeNonPremixedFlamelets(self):
         if "COUNTERFLAME" in self.__flameletSolverDict.keys():
             self.__flameletSolverDict["COUNTERFLAME"].solveForMixtureStatus(0)
         return
-    
+
     def ComputeFlamelets(self):
         """Generate and store all flamelet data for the current settings.
         """
@@ -414,9 +419,9 @@ class DataGenerator_Cantera(DataGenerator_Base):
         for mix_status in self.__unb_mixture_status:
             self.computePremixedFlameletsFor(mix_status)
         return
-    
+
 def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors:int=2, loglevel:int=0,
-                        free_flame_refine:dict=None, burner_flame_refine:dict=None):
+                        free_flame_refine:dict=None, burner_flame_refine:dict=None, counter_flame_refine:dict=None):
     """Generate flamelet data according to Config_FGM settings either in serial or parallel.
 
     :param Config: Config_FGM class containing manifold and flamelet generation settings.
@@ -433,6 +438,9 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
     :param burner_flame_refine: Cantera burner-flame refinement criteria dict with keys ratio, slope, curve, prune.
         If None, the DataGenerator_Cantera defaults are used.
     :type burner_flame_refine: dict, optional
+    :param counter_flame_refine: Cantera counter-flow flame refinement criteria dict with keys ratio, slope, curve, prune.
+        If None, the DataGenerator_Cantera defaults are used.
+    :type counter_flame_refine: dict, optional
     :raises Exception: If number of processors is set to zero when running in parallel.
     """
 
@@ -460,6 +468,8 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
             F.SetFreeFlameRefineCriteria(**free_flame_refine)
         if burner_flame_refine is not None:
             F.SetBurnerFlameRefineCriteria(**burner_flame_refine)
+        if counter_flame_refine is not None:
+            F.setRefinementCriteria("COUNTERFLAME", **counter_flame_refine)
         return F
 
     # Set up Cantera flamelet generator object

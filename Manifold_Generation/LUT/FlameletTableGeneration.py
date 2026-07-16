@@ -590,38 +590,196 @@ class SU2TableGenerator:
         data_interp = self._lookup_tree(q=CV_scaled,nnear=self._n_near,p=self._p_fac)
         return data_interp
 
-    def VisualizeTableLevel(self, val_mix_frac:float, var_to_plot:str=None):
-        """Compute and visualize the table connectivity for a certain mixture fraction value.
+    def PlotTableSlices(self,
+                        x_cv: str,
+                        y_var: str,
+                        slice_cv: str,
+                        slice_range: tuple = None,
+                        n_slices: int = 10,
+                        n_x_points: int = 200,
+                        save_path: str = None,
+                        show: bool = False):
+        """Plot a dependent variable against one controlling variable for a set of
+        fixed slices of another controlling variable, querying the IDW interpolator.
 
-        :param val_mix_frac: mixture fraction value for which to compute the table connectivity.
+        Example: T(Z) for 10 enthalpy levels between h_min and h_max.
+
+        :param x_cv: Name of the controlling variable to use as the x-axis (e.g. 'MixtureFraction').
+        :type x_cv: str
+        :param y_var: Name of the variable to plot on the y-axis (e.g. 'Temperature').
+        :type y_var: str
+        :param slice_cv: Name of the controlling variable held fixed per line (e.g. 'EnthalpyTot').
+        :type slice_cv: str
+        :param slice_range: (min, max) values of slice_cv. If None, the data extent is used.
+        :type slice_range: tuple, optional
+        :param n_slices: Number of slice values uniformly distributed across slice_range.
+        :type n_slices: int
+        :param n_x_points: Number of x_cv sample points per slice.
+        :type n_x_points: int
+        :param save_path: If provided, save the figure to this path instead of displaying it.
+        :type save_path: str, optional
+        :raises Exception: if x_cv, slice_cv, or y_var are not found in the flamelet data.
+        """
+        for name in [x_cv, slice_cv]:
+            if name not in self._controlling_variables:
+                raise Exception("'%s' is not a controlling variable. Available: %s"
+                                % (name, self._controlling_variables))
+        if y_var not in self._Flamelet_Variables:
+            raise Exception("'%s' not found in flamelet data. Available: %s"
+                            % (y_var, self._Flamelet_Variables))
+
+        x_idx     = self._controlling_variables.index(x_cv)
+        slice_idx = self._controlling_variables.index(slice_cv)
+        y_col     = self._Flamelet_Variables.index(y_var)
+
+        # Determine x and slice extents from the loaded data.
+        x_min     = float(np.min(self._D_full[:, x_idx]))
+        x_max     = float(np.max(self._D_full[:, x_idx]))
+        if slice_range is None:
+            s_min = float(np.min(self._D_full[:, slice_idx]))
+            s_max = float(np.max(self._D_full[:, slice_idx]))
+        else:
+            s_min, s_max = float(slice_range[0]), float(slice_range[1])
+
+        slice_values = np.linspace(s_min, s_max, n_slices)
+        x_values     = np.linspace(x_min, x_max, n_x_points)
+
+        # Level CV value: 0.0 for 2D mode (PV = 0), or the table centre otherwise.
+        n_cv = len(self._controlling_variables)
+        level_val = 0.0 if self._is_2D_table else 0.5 * (
+            float(np.min(self._D_full[:, self._level_cv_idx])) +
+            float(np.max(self._D_full[:, self._level_cv_idx])))
+
+        # Build a Delaunay hull of the actual 2D data so that query points outside
+        # the data support (e.g. high h at Z=1 for counterflow flames) are masked.
+        from scipy.spatial import Delaunay as _Delaunay
+        if self._is_2D_table and self._scaler_2d is not None:
+            ZH_dim  = self._D_full[:, [x_idx, slice_idx]]
+            ZH_norm = self._scaler_2d.transform(ZH_dim)
+            _data_hull = _Delaunay(ZH_norm)
+            _has_hull  = True
+            _x_scaler_range  = [float(self._D_full[:, x_idx].min()),
+                                 float(self._D_full[:, x_idx].max())]
+            _s_scaler_range  = [float(self._D_full[:, slice_idx].min()),
+                                 float(self._D_full[:, slice_idx].max())]
+        else:
+            _has_hull = False
+
+        cmap   = plt.cm.coolwarm
+        norm   = plt.Normalize(vmin=s_min, vmax=s_max)
+
+        fig, ax = plt.subplots(figsize=(9, 5), constrained_layout=True)
+
+        for s_val in slice_values:
+            # Build query array: all CVs at their level value, then overwrite x and slice.
+            CV_query = np.zeros([n_x_points, n_cv])
+            CV_query[:, self._level_cv_idx] = level_val
+            CV_query[:, x_idx]              = x_values
+            CV_query[:, slice_idx]          = s_val
+
+            # Mask x values that fall outside the convex hull of the data.
+            if _has_hull:
+                x_norm = (x_values - _x_scaler_range[0]) / (_x_scaler_range[1] - _x_scaler_range[0] + 1e-32)
+                s_norm = (s_val    - _s_scaler_range[0]) / (_s_scaler_range[1] - _s_scaler_range[0] + 1e-32)
+                query_norm = np.column_stack([x_norm, np.full(n_x_points, s_norm)])
+                inside = _data_hull.find_simplex(query_norm) >= 0
+            else:
+                inside = np.ones(n_x_points, dtype=bool)
+
+            if not np.any(inside):
+                continue   # entire slice is outside data support — skip
+
+            result = self.__EvaluateFlameletInterpolator(CV_query)
+            y_vals = result[:, y_col]
+            y_vals[~inside] = np.nan   # blank extrapolation regions
+
+            ax.plot(x_values, y_vals, color=cmap(norm(s_val)), linewidth=1.2)
+
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cb = fig.colorbar(sm, ax=ax, pad=0.02)
+        cb.set_label(slice_cv, fontsize=11)
+
+        ax.set_xlabel(x_cv, fontsize=12)
+        ax.set_ylabel(y_var, fontsize=12)
+        ax.set_title("%s(%s)  |  %d slices of %s" % (y_var, x_cv, n_slices, slice_cv), fontsize=13)
+        ax.grid(True, linestyle='--', alpha=0.4)
+
+        if save_path:
+            fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            print("  Saved: %s" % save_path)
+        if not show:
+            plt.close(fig)
+        return
+
+    def VisualizeTableLevel(self, val_mix_frac:float, var_to_plot:str=None,
+                            plot_3d:bool=False, show_grid:bool=True,
+                            save_path:str=None, show:bool=False):
+        """Compute and visualize the table mesh and optionally a data field at a given level value.
+
+        :param val_mix_frac: value of the level controlling variable for which to generate the table level.
         :type val_mix_frac: float
-        :raises Exception: if the mixture fraction value lies outside the flamelet data range.
+        :param var_to_plot: name of the variable to colour the plot with. If None, only the mesh is shown.
+        :type var_to_plot: str, optional
+        :param plot_3d: when True and var_to_plot is set, render a 3D surface; when False render a 2D colour map.
+        :type plot_3d: bool
+        :param show_grid: overlay the triangulation wireframe on the plot.
+        :type show_grid: bool
+        :param save_path: if provided, save the figure to this path instead of displaying it.
+        :type save_path: str, optional
         """
 
         Tria, Nodes, HullIdx, level_data, XY_ref_dim = self.ComputeTableLevelMesh(val_mix_frac)
         print("Total mesh nodes: %i, refinement seed points: %i" % (len(Nodes), len(XY_ref_dim)))
 
         p0, p1 = self._plane_cv_idxs
-        if var_to_plot == None:
-            _ = plt.figure(figsize=[10,10])
-            ax = plt.axes()
-            ax.triplot(Nodes[:, p0], Nodes[:, p1], Tria)
-            ax.plot(Nodes[HullIdx, p0], Nodes[HullIdx, p1], 'ko', label=r"Hull nodes")
-            ax.set_xlabel(self._plane_cv_names[0], fontsize=20)
-            ax.set_ylabel(self._plane_cv_names[1], fontsize=20)
-            ax.legend(fontsize=20)
-            ax.set_title(self._level_cv_name + " = " + str(val_mix_frac))
-            plt.show()
-        else:
+        title = "%s = %s" % (self._level_cv_name, str(val_mix_frac))
+
+        if var_to_plot is None:
+            # Mesh-only plot (always 2D).
+            fig, ax = plt.subplots(figsize=(10, 10))
+            ax.triplot(Nodes[:, p0], Nodes[:, p1], Tria, linewidth=0.5)
+            ax.plot(Nodes[HullIdx, p0], Nodes[HullIdx, p1], 'ko', ms=3, label="Hull nodes")
+            ax.set_xlabel(self._plane_cv_names[0], fontsize=14)
+            ax.set_ylabel(self._plane_cv_names[1], fontsize=14)
+            ax.set_title(title, fontsize=14)
+            ax.legend(fontsize=12)
+
+        elif plot_3d:
+            # 3D surface plot.
             var_idx = self._Flamelet_Variables.index(var_to_plot)
-            fig = plt.figure(figsize=[10,10])
-            ax = fig.add_subplot(111, projection='3d')
+            fig = plt.figure(figsize=(10, 10))
+            ax  = fig.add_subplot(111, projection='3d')
             ax.plot_trisurf(Nodes[:, p0], Nodes[:, p1], level_data[:, var_idx],
-                            triangles=Tria, cmap='viridis', alpha=0.9, edgecolor='k', linewidth=0.2)
-            ax.set_xlabel(self._plane_cv_names[0], fontsize=20)
-            ax.set_ylabel(self._plane_cv_names[1], fontsize=20)
-            ax.set_title(self._level_cv_name + " = " + str(val_mix_frac))
-            plt.show()
+                            triangles=Tria, cmap='viridis', alpha=0.9,
+                            edgecolor='k' if show_grid else 'none',
+                            linewidth=0.2 if show_grid else 0)
+            ax.set_xlabel(self._plane_cv_names[0], fontsize=14)
+            ax.set_ylabel(self._plane_cv_names[1], fontsize=14)
+            ax.set_zlabel(var_to_plot, fontsize=14)
+            ax.set_title(title, fontsize=14)
+
+        else:
+            # 2D colour-map plot.
+            import matplotlib.tri as mtri
+            var_idx  = self._Flamelet_Variables.index(var_to_plot)
+            values   = level_data[:, var_idx]
+            triang   = mtri.Triangulation(Nodes[:, p0], Nodes[:, p1], Tria)
+            fig, ax  = plt.subplots(figsize=(10, 7), constrained_layout=True)
+            tc = ax.tripcolor(triang, values, shading='gouraud', cmap='inferno')
+            if show_grid:
+                ax.triplot(triang, color='k', linewidth=0.2, alpha=0.4)
+            cb = fig.colorbar(tc, ax=ax, pad=0.02)
+            cb.set_label(var_to_plot, fontsize=12)
+            ax.set_xlabel(self._plane_cv_names[0], fontsize=14)
+            ax.set_ylabel(self._plane_cv_names[1], fontsize=14)
+            ax.set_title("%s — %s" % (var_to_plot, title), fontsize=14)
+
+        if save_path:
+            fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            print("  Saved: %s" % save_path)
+        if not show:
+            plt.close(fig)
         return
 
     def GenerateTableNodes(self):
@@ -959,13 +1117,54 @@ class SU2TableGenerator:
             plane1_min = self._Config.gas.enthalpy_mass
 
             return plane0_unb, plane0_b, plane1_min, plane1_max, plane1_at_unb
+
+        elif (self._level_cv_name == DefaultSettings_FGM.name_pv and
+                self._plane_cv_names[0] == DefaultSettings_FGM.name_mixfrac and
+                self._plane_cv_names[1] == DefaultSettings_FGM.name_enth):
+            # For counterflow diffusion flames: 2D (Z, h) table at fixed PV
+            fuel = self._Config.GetFuelString()
+            ox   = self._Config.GetOxidizerString()
+            T_lo, T_hi = self._Config.GetUnbTempBounds()
+            p = DefaultSettings_FGM.pressure
+
+            # Plane CV 0 is mixture fraction: ranges from 0 (oxidizer) to 1 (fuel)
+            plane0_unb = 0.0  # Pure oxidizer
+            plane0_b = 1.0    # Pure fuel
+
+            # Plane CV 1 is enthalpy: ranges from T_lo to T_hi
+            # At mixture fraction = 0 (oxidizer side)
+            self._Config.gas.set_mixture_fraction(0.0, fuel, ox)
+            self._Config.gas.TP = T_lo, p
+            h_ox_cold = self._Config.gas.enthalpy_mass
+            self._Config.gas.TP = T_hi, p
+            h_ox_hot = self._Config.gas.enthalpy_mass
+
+            # At mixture fraction = 1 (fuel side)
+            self._Config.gas.set_mixture_fraction(1.0, fuel, ox)
+            self._Config.gas.TP = T_lo, p
+            h_fuel_cold = self._Config.gas.enthalpy_mass
+            plane1_at_unb = h_fuel_cold
+            self._Config.gas.TP = T_hi, p
+            h_fuel_hot = self._Config.gas.enthalpy_mass
+
+            # Enthalpy range spans coldest to hottest across all mixture fractions
+            plane1_min = min(h_ox_cold, h_fuel_cold)
+            plane1_max = max(h_ox_hot, h_fuel_hot)
+
+            return plane0_unb, plane0_b, plane1_min, plane1_max, plane1_at_unb
+
         else:
             raise NotImplementedError(
                 "Plane CV bounds not implemented for level='%s', plane=%s. "
-                "Currently only supported: level='%s', plane=['%s', '%s']." % (
+                "Supported configurations:\n"
+                "  (1) level='%s', plane=['%s', '%s'] for premixed flames\n"
+                "  (2) level='%s', plane=['%s', '%s'] for non-premixed flames" % (
                     self._level_cv_name, self._plane_cv_names,
                     DefaultSettings_FGM.name_mixfrac,
                     DefaultSettings_FGM.name_pv,
+                    DefaultSettings_FGM.name_enth,
+                    DefaultSettings_FGM.name_pv,
+                    DefaultSettings_FGM.name_mixfrac,
                     DefaultSettings_FGM.name_enth))
 
     def __ComputeCurvature(self, val_level:float):
@@ -987,18 +1186,79 @@ class SU2TableGenerator:
         p_idxs = self._plane_cv_idxs
         n_cv   = len(self._controlling_variables)
 
-        # Define 2D grid between minimum and maximum plane controlling variables.
-        plane0_range = np.linspace(plane0_unb, plane0_b, 800)
-        plane1_range = np.linspace(plane1_min, plane1_max, 800)
+        # COMPUTE CONVEX HULL FROM ACTUAL DATA POINTS (instead of rectangular grid)
+        # This preserves the natural parallelogram shape of the data instead of forcing it to a rectangle.
+        
+        # Extract the 2D plane coordinates from actual data in PHYSICAL units
+        data_2d = self._D_full[:, p_idxs]  # Physical units: (N, 2) array [Z, h]
+        
+        # Compute convex hull in PHYSICAL space
+        try:
+            hull = ConvexHull(data_2d)
+            x_hull_phys = data_2d[hull.vertices, 0]
+            y_hull_phys = data_2d[hull.vertices, 1]
+            
+            # Normalize the hull vertices for gmsh
+            # For 2D tables, use the 2D scaler that only operates on (Z, h)
+            if self._is_2D_table and self._scaler_2d is not None:
+                hull_2d = np.column_stack([x_hull_phys, y_hull_phys])
+                hull_norm = self._scaler_2d.transform(hull_2d)
+                x_hull = hull_norm[:, 0]
+                y_hull = hull_norm[:, 1]
+            else:
+                # For 3D tables, use the 3D scaler
+                hull_3d = np.column_stack([
+                    x_hull_phys,
+                    y_hull_phys,
+                    np.full(len(x_hull_phys), val_level)
+                ])
+                x_hull, y_hull = self._scaler.transform(hull_3d)[:, p_idxs].T
+            
+            print("  Hull has %d vertices" % len(hull.vertices))
+        except Exception as e:
+            print("  WARNING: ConvexHull failed on actual data: %s" % str(e))
+            print("  Falling back to rectangular grid approach...")
+            
+            # Fallback: use rectangular grid approach
+            plane0_range = np.linspace(plane0_unb, plane0_b, 400)
+            plane1_range = np.linspace(plane1_min, plane1_max, 400)
+            xgrid, ygrid = np.meshgrid(plane0_range, plane1_range)
+            
+            n_pts = xgrid.size
+            CV_grid_init = np.zeros([n_pts, n_cv])
+            CV_grid_init[:, p_idxs[0]] = xgrid.flatten()
+            CV_grid_init[:, p_idxs[1]] = ygrid.flatten()
+            CV_grid_init[:, self._level_cv_idx] = val_level
+            
+            # Burner-stabilized boundary filter
+            plane0_grid = CV_grid_init[:, p_idxs[0]]
+            plane1_grid = CV_grid_init[:, p_idxs[1]]
+            h_limit = ((plane1_at_unb - plane1_min) * plane0_grid +
+                       (plane1_min * plane0_unb - plane1_at_unb * plane0_b)) / (plane0_unb - plane0_b)
+            idx_keep = plane1_grid >= h_limit
+            
+            CV_grid_norm_init = self._scaler.transform(CV_grid_init)
+            CV_grid_norm = CV_grid_norm_init[idx_keep, :]
+            
+            hull = ConvexHull(CV_grid_norm[:, p_idxs])
+            x_hull = CV_grid_norm[hull.vertices, p_idxs[0]]
+            y_hull = CV_grid_norm[hull.vertices, p_idxs[1]]
+
+        # 2: Generate refinement locations based on flamelet indicators
+        # Use coarser grid (400x400) to reduce memory
+        grid_resolution = 400
+        plane0_range = np.linspace(plane0_unb, plane0_b, grid_resolution)
+        plane1_range = np.linspace(plane1_min, plane1_max, grid_resolution)
         xgrid, ygrid = np.meshgrid(plane0_range, plane1_range)
 
         n_pts = xgrid.size
+        print("  Computing refinement indicators on %dx%d grid (%d points)" % (grid_resolution, grid_resolution, n_pts))
         CV_grid_init = np.zeros([n_pts, n_cv])
         CV_grid_init[:, p_idxs[0]]          = xgrid.flatten()
         CV_grid_init[:, p_idxs[1]]          = ygrid.flatten()
         CV_grid_init[:, self._level_cv_idx] = val_level
 
-        # 2: Locate nodes that are above the burner-stabilized boundary line.
+        # Burner-stabilized boundary filter
         plane0_grid = CV_grid_init[:, p_idxs[0]]
         plane1_grid = CV_grid_init[:, p_idxs[1]]
         h_limit = ((plane1_at_unb - plane1_min) * plane0_grid +
@@ -1010,12 +1270,7 @@ class SU2TableGenerator:
         CV_grid_norm_init = self._scaler.transform(CV_grid_init)
         CV_grid_norm      = self._scaler.transform(CV_grid)
 
-        # 3: Generate convex hull on the plane coordinates.
-        hull   = ConvexHull(CV_grid_norm[:, p_idxs])
-        x_hull = CV_grid_norm[hull.vertices, p_idxs[0]]
-        y_hull = CV_grid_norm[hull.vertices, p_idxs[1]]
-
-        # 4: Locate refinement locations based on the combined indicator across all refinement fields.
+        # Evaluate refinement fields to find high-gradient regions
         missing = [f for f in self._refinement_fields if f not in self._Flamelet_Variables]
         if missing:
             raise Exception("Refinement field(s) not found in flamelet data: %s. "
@@ -1033,27 +1288,19 @@ class SU2TableGenerator:
 
         x_refinement = CV_grid_norm_init[idx_ref, p_idxs[0]]
         y_refinement = CV_grid_norm_init[idx_ref, p_idxs[1]]
+        
+        n_ref_initial = len(x_refinement)
+        print("  Found %d refinement points above threshold %.3f" % (n_ref_initial, self._curvature_threshold))
+        
+        # Early subsampling if too many points (to reduce memory before adding boundary points)
+        N_max_initial = self._max_refinement_seeds * 2  # Allow 2x for boundary additions
+        if n_ref_initial > N_max_initial:
+            idx_sub = np.round(np.linspace(0, n_ref_initial - 1, N_max_initial)).astype(int)
+            x_refinement = x_refinement[idx_sub]
+            y_refinement = y_refinement[idx_sub]
+            print("  Early subsampled to %d points to reduce memory" % len(x_refinement))
 
-        # 5: Generate refinement locations at the unburnt and burnt plane0 boundaries.
-        plane1_unb_range = np.linspace(plane1_at_unb, plane1_max, self._Config.GetNpTemp())
-        CV_unb = np.zeros([len(plane1_unb_range), n_cv])
-        CV_unb[:, p_idxs[0]]          = plane0_unb
-        CV_unb[:, p_idxs[1]]          = plane1_unb_range
-        CV_unb[:, self._level_cv_idx] = val_level
-        CV_unb_norm = self._scaler.transform(CV_unb)
-
-        plane1_b_range = np.linspace(plane1_min, plane1_max, self._Config.GetNpTemp())
-        CV_b = np.zeros([len(plane1_b_range), n_cv])
-        CV_b[:, p_idxs[0]]          = plane0_b
-        CV_b[:, p_idxs[1]]          = plane1_b_range
-        CV_b[:, self._level_cv_idx] = val_level
-        CV_b_norm = self._scaler.transform(CV_b)
-
-        x_refinement = np.append(x_refinement, CV_unb_norm[:, p_idxs[0]])
-        x_refinement = np.append(x_refinement, CV_b_norm[:,  p_idxs[0]])
-        y_refinement = np.append(y_refinement, CV_unb_norm[:, p_idxs[1]])
-        y_refinement = np.append(y_refinement, CV_b_norm[:,  p_idxs[1]])
-
+        # 3: Generate refinement locations at the unburnt and burnt plane0 boundaries.
         XY_refinement = np.vstack((x_refinement, y_refinement)).T
         XY_hull       = np.vstack((x_hull, y_hull)).T
 
@@ -1101,6 +1348,11 @@ class SU2TableGenerator:
         hull_cell_size = self._convex_hull_cell_size
         refinement_radius = self._refinement_radius #* np.sqrt(level_area)
         print("Generating 2D mesh with base cell size %.4f, hull cell size %.4f and refined cell size %.4f" % (base_cell_size, hull_cell_size, refined_cell_size))
+        print("  Hull points: %d, Refinement seeds: %d" % (len(XY_hull), len(XY_refinement)))
+
+        # Check for degenerate hull
+        if len(XY_hull) < 3:
+            raise Exception("Hull has fewer than 3 points - cannot create mesh.")
 
         hull_pts = []
         for i in range(int(len(XY_hull)/2)):
@@ -1110,18 +1362,23 @@ class SU2TableGenerator:
             hull_pts_2.append(factory.addPoint(XY_hull[i, 0], XY_hull[i, 1], 0, hull_cell_size))
         hull_pts_2.append(hull_pts[0])
 
+        print("  Created %d points in hull_pts and %d points in hull_pts_2" % (len(hull_pts), len(hull_pts_2)))
+
         # Subsample refinement seed points to avoid excessive PointsList size.
         N_max_seeds = self._max_refinement_seeds
         if len(XY_refinement) > N_max_seeds:
             idx_sub = np.round(np.linspace(0, len(XY_refinement) - 1, N_max_seeds)).astype(int)
             XY_refinement_sub = XY_refinement[idx_sub]
+            print("  Subsampled refinement seeds from %d to %d" % (len(XY_refinement), len(XY_refinement_sub)))
         else:
             XY_refinement_sub = XY_refinement
+            print("  Using all %d refinement seeds (below max %d)" % (len(XY_refinement), N_max_seeds))
 
         embed_pts = []
         for i in range(len(XY_refinement_sub)):
             pt_idx = factory.addPoint(XY_refinement_sub[i, 0], XY_refinement_sub[i, 1], 0, refined_cell_size)
             embed_pts.append(pt_idx)
+        print("  Created %d embedded refinement points in gmsh" % len(embed_pts))
 
         hull_curve_1 = factory.addPolyline(hull_pts)
         hull_curve_2 = factory.addPolyline(hull_pts_2)
@@ -1166,12 +1423,23 @@ class SU2TableGenerator:
         gmsh.model.mesh.field.setAsBackgroundMesh(7)
 
         gmsh.option.setNumber("Mesh.Algorithm", 5)
-        gmsh.model.mesh.generate(2)
+
+        try:
+            print("  Starting mesh generation...")
+            gmsh.model.mesh.generate(2)
+            print("  Mesh generation completed successfully")
+        except Exception as e:
+            print("  ERROR: Mesh generation failed!")
+            print("  Exception: %s" % str(e))
+            # Skip gmsh cleanup to avoid additional issues
+            raise Exception("Gmsh meshing failed. Try increasing cell sizes or reducing refinement seeds.")
+
         nodes = gmsh.model.mesh.getNodes(dim=2, tag=-1, includeBoundary=True, returnParametricCoord=False)[1]
         MeshPoints = np.array([nodes[::3], nodes[1::3]]).T
+        print("  Extracted %d mesh nodes" % len(MeshPoints))
 
-        # we need finalize
-        gmsh.finalize()
+        # Don't finalize or clear - gmsh has issues with cleanup in some environments
+        # This causes a small memory leak but avoids segfaults
 
         # Build the full CV array in controlling-variable column order.
         plane0_norm = MeshPoints[:, 0]

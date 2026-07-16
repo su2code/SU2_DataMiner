@@ -149,10 +149,10 @@ class FlameletConcatenator:
         self.__SizeDataArrays()
 
         self.__extractFlameletData()
-        
+
         self.__WriteOutputFiles()
         return
-    
+
     def CollectBoundaryData(self):
         self.IgnoreMixtureBounds(True)
         self.__Config.setFlameletTypes(["EQUILIBRIUM"])
@@ -181,13 +181,13 @@ class FlameletConcatenator:
         self.__LookUp_flamelet_data = np.zeros([self.__nFlamelets * self.__Np_per_flamelet, len(self.__LookUp_vars)])
 
         return
-    
+
     def __countNumberofFlameletDataPoints(self):
         self.__nFlameletDataPoints = 0
         self.__nFlamelets = 0
         self.__loopOverFlamelets(self.__incrementNumberOfFlameletData)
         return
-    
+
     def __loopOverFlamelets(self, taskPerFlamelet:Callable):
         flameletTypes = self.__Config.getFlameletTypes()
         for flameletType in flameletTypes:
@@ -207,7 +207,7 @@ class FlameletConcatenator:
                         taskPerFlamelet(flameletSolver)
             self.__printMsg("Done.")
         return
-    
+
     def __isWithinMixtureBounds(self, flameletSolver:FlameletSolver_Cantera):
         if self.__ignore_mixture_bounds or not flameletSolver.isPremixed():
             return True
@@ -215,13 +215,13 @@ class FlameletConcatenator:
             mixture_status = flameletSolver.getMixtureStatus()
             margin = 1e-2
             return (mixture_status-margin <= self.__mix_status_max) and (mixture_status+margin >= self.__mix_status_min)
-        
+
     def __incrementNumberOfFlameletData(self, flameletSolver:FlameletSolver_Cantera):
         thermochemical_solution = flameletSolver.getThermoChemicalData()
         self.__nFlameletDataPoints += thermochemical_solution.shape[0]
         self.__nFlamelets += 1
         return
-    
+
     def __extractFlameletData(self):
         self.__printMsg("Extracting thermochemical data from manifold...")
         self.__flameletSolutionIndex = 0
@@ -236,7 +236,7 @@ class FlameletConcatenator:
             T_flamelet = solutionData[FGMVars.Temperature.name]
             if np.max(T_flamelet) < DefaultSettings_FGM.T_threshold:
                 flameletIsBurning = False
-                
+
         if flameletIsBurning:
             tracingVariable = self.__calculateTracingVariable(solutionData)
             if self.__reactionProductsForLUT(flameletSolution):
@@ -272,7 +272,7 @@ class FlameletConcatenator:
                     self.__PD_flamelet_data[startIndex:stopIndex] = PD_data_interpolated
         self.__flameletSolutionIndex += 1
         return
-    
+
     def __retrieveFlameletSolution(self, flameletSolver:FlameletSolver_Cantera):
         solutionData = flameletSolver.getThermoChemicalData()
 
@@ -282,7 +282,7 @@ class FlameletConcatenator:
         if not flameletSolver.isPremixed() and not self.__ignore_mixture_bounds:
             solutionData = self.__clipNonPremixedFlameletToMixtureBounds(solutionData)
         return solutionData
-    
+
     def __clipNonPremixedFlameletToMixtureBounds(self, solutionData:pd.DataFrame):
         if self.__Config.GetMixtureStatus():
             mixfrac_upper = self.__mix_status_max
@@ -298,12 +298,12 @@ class FlameletConcatenator:
         within_bounds = np.logical_and(mixfrac_solution >= mixfrac_lower, mixfrac_solution <= mixfrac_upper)
         solutionData_out = solutionData.iloc[within_bounds]
         return solutionData_out
-    
+
     def __WriteOutputFiles(self):
         """Collect all flamelet data arrays, split into train, test, and validation portions, and write to appropriately named files.
         """
         self.__printMsg("Writing accumulated flamelet data files...")
-        
+
         flameletData = self.__accumulateDataFromFlamelets()
 
         flameletDataFull = self.__filterFlameletData(flameletData)
@@ -324,7 +324,7 @@ class FlameletConcatenator:
 
         self.__printMsg("Done.")
         return
-    
+
     def __accumulateDataFromFlamelets(self):
         outputData = pd.DataFrame()
         outputData[self.__Config.GetControllingVariables()] = self.__CV_flamelet_data
@@ -334,25 +334,25 @@ class FlameletConcatenator:
         if self.__Config.PreferentialDiffusion():
             outputData[self.__PD_train_vars] = self.__PD_flamelet_data
         return outputData
-    
+
     def __filterFlameletData(self, flameletData:pd.DataFrame):
         uniqueData = flameletData.drop_duplicates()
         noNans = uniqueData.dropna()
         noZeros = noNans.loc[~(noNans == 0).all(axis=1)].reset_index(drop=True)
-        
+
         return noZeros
-    
+
     def __splitFlameletDataSet(self, flameletDataFull:pd.DataFrame):
         shuffledData = flameletDataFull.sample(frac=1).reset_index(drop=True)
         Np_total = shuffledData.shape[0]
         Np_train = int(self.__Config.GetTrainFraction()*Np_total)
         Np_test = int(self.__Config.GetTestFraction()*Np_total)
-        
+
         trainData = shuffledData.iloc[:Np_train,:]
         testData = shuffledData.iloc[Np_train:Np_train+Np_test,:]
         validationData = shuffledData.iloc[Np_train+Np_test:,:]
         return trainData, testData, validationData
-    
+
     def IgnoreMixtureBounds(self, ignore_bounds:bool=False):
         self.__ignore_mixture_bounds = ignore_bounds
         return
@@ -453,7 +453,7 @@ class FlameletConcatenator:
         else:
             self.__Config.excludeFlameletType(flameletType)
         return
-    
+
     def SetLookUpVars(self, input:list[str]):
         """Define passive look-up variables to be included in the manifold data.
 
@@ -461,6 +461,9 @@ class FlameletConcatenator:
         :type input: list[str]
         """
         self.__Config.SetLookUpVariables(input)
+        self.__LookUp_vars = []
+        for var in input:
+            self.__LookUp_vars.append(var)
         return
 
     def SetFlameletDir(self, input:str):
@@ -506,25 +509,25 @@ class FlameletConcatenator:
         self.__Config.SetTestFraction(input)
         return
 
-   
+
     def __reactionProductsForLUT(self, flameletSolver:FlameletSolver_Cantera):
         if self.__write_LUT_data and flameletSolver.getFlameletType()=="Equilibrium":
             return flameletSolver.isReactionProducts()
         else:
             return False
-        
+
     def __calculateTracingVariable(self, solutionData:pd.DataFrame):
         controlVariables = self.__retrieveControlVariables(solutionData)
-        
+
         cv_max, cv_min = np.max(controlVariables,axis=0), np.min(controlVariables,axis=0)
         scaledControlVariables = (controlVariables - cv_min)/(cv_max - cv_min + 1e-10)
         controlVariableIncrement = scaledControlVariables[1:] - scaledControlVariables[:-1]
-        
+
         tracingVariableIncrement = np.linalg.norm(controlVariableIncrement,axis=1)
         tracingVariable = np.hstack((0, np.cumsum(tracingVariableIncrement)))
         tracingVariable_scaled = tracingVariable / (np.max(tracingVariable)+1e-10)
         return tracingVariable_scaled
-    
+
     def __retrieveControlVariables(self, solutionData:pd.DataFrame):
         controlVariables = np.zeros([solutionData.shape[0], len(self.__Config.GetControllingVariables())])
         for iCv, cv in enumerate(self.__Config.GetControllingVariables()):
@@ -533,7 +536,7 @@ class FlameletConcatenator:
             else:
                 controlVariables[:, iCv] = solutionData[cv]
         return controlVariables
-    
+
     def __retrieveThermoPhyiscalData(self, solutionData:pd.DataFrame):
         TD_data = np.zeros([solutionData.shape[0], len(self.__TD_train_vars)])
         for iVar_TD, TD_var in enumerate(self.__TD_train_vars):
@@ -545,13 +548,13 @@ class FlameletConcatenator:
             else:
                 TD_data[:, iVar_TD] = solutionData[TD_var]
         return TD_data
-    
+
     def __retrievePassiveLookUpData(self, solutionData:pd.DataFrame):
         LookUp_data = np.zeros([solutionData.shape[0], len(self.__LookUp_vars)])
         for iVar_LookUp, LookUp_var in enumerate(self.__LookUp_vars):
             LookUp_data[:, iVar_LookUp] = solutionData[LookUp_var]
         return LookUp_data
-    
+
     def __retrievePreferentialDiffusionScalars(self, solutionData:pd.DataFrame):
         vars = list(solutionData.keys())
         beta_pv_flamelet, beta_h1_flamelet, beta_h2_flamelet, beta_z_flamelet = self.__Config.ComputeBetaTerms(vars, solutionData.values)
@@ -561,7 +564,7 @@ class FlameletConcatenator:
         PD_data[:, 2] = beta_h2_flamelet
         PD_data[:, 3] = beta_z_flamelet
         return PD_data
-    
+
     def __retrieveSourceTerms(self, solutionData:pd.DataFrame):
         nP_flamelet = solutionData.shape[0]
         species_mass_fraction = np.zeros([nP_flamelet, len(self.__Species_in_FGM)])
@@ -594,7 +597,7 @@ class FlameletConcatenator:
             Sources_data[:, 1 + 4*iSp + 1] = species_destruction_rate[:, iSp]
             Sources_data[:, 1 + 4*iSp + 2] = species_net_rate[:, iSp]
             Sources_data[:, 1 + 4*iSp + 3] = species_mass_fraction[:, iSp]
-        
+
         sourceterm_zero_line_numbers = np.zeros(nP_flamelet, dtype=bool)
         sourceterm_zero_line_numbers[0]  = True
         sourceterm_zero_line_numbers[-1] = True
@@ -609,25 +612,25 @@ class FlameletConcatenator:
                 sourceterm_zero_line_numbers,
                 np.logical_or((T_flamelet - T_min) < deltaT,
                                 (T_max - T_flamelet) < deltaT))
-            
+
         # Only zero the PV source term at the flamelet boundaries.
         # Species production rates and mass fractions are NOT zeroed
         # because (a) Y-{species} is non-zero at PV_max and (b) species
         # rates at PV_max are governed by Cantera's equilibrium values.
         Sources_data[sourceterm_zero_line_numbers, 0] = 0.0
         return Sources_data
-    
+
     def __interpolateAlongTracingVariable(self, tracingVariableData:np.ndarray[float], tracingVariableQuery:np.ndarray[float], flameletData:np.ndarray[float]):
         flameletData_Sampled = np.zeros([self.__Np_per_flamelet, np.shape(flameletData)[1]])
         for i in range(np.shape(flameletData)[1]):
             flameletData_Sampled[:, i] = np.interp(tracingVariableQuery, tracingVariableData, flameletData[:, i])
         return flameletData_Sampled
-    
+
     def __printMsg(self, msg:str):
         if self.__verbose > 0:
             print(msg)
         return
-    
+
 class GroupOutputs:
     """Class which groups flamelet data variables into MLP outputs based on their affinity.
     """
