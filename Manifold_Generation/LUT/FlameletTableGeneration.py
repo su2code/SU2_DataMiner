@@ -1188,16 +1188,16 @@ class SU2TableGenerator:
 
         # COMPUTE CONVEX HULL FROM ACTUAL DATA POINTS (instead of rectangular grid)
         # This preserves the natural parallelogram shape of the data instead of forcing it to a rectangle.
-        
+
         # Extract the 2D plane coordinates from actual data in PHYSICAL units
         data_2d = self._D_full[:, p_idxs]  # Physical units: (N, 2) array [Z, h]
-        
+
         # Compute convex hull in PHYSICAL space
         try:
             hull = ConvexHull(data_2d)
             x_hull_phys = data_2d[hull.vertices, 0]
             y_hull_phys = data_2d[hull.vertices, 1]
-            
+
             # Normalize the hull vertices for gmsh
             # For 2D tables, use the 2D scaler that only operates on (Z, h)
             if self._is_2D_table and self._scaler_2d is not None:
@@ -1213,33 +1213,33 @@ class SU2TableGenerator:
                     np.full(len(x_hull_phys), val_level)
                 ])
                 x_hull, y_hull = self._scaler.transform(hull_3d)[:, p_idxs].T
-            
+
             print("  Hull has %d vertices" % len(hull.vertices))
         except Exception as e:
             print("  WARNING: ConvexHull failed on actual data: %s" % str(e))
             print("  Falling back to rectangular grid approach...")
-            
+
             # Fallback: use rectangular grid approach
             plane0_range = np.linspace(plane0_unb, plane0_b, 400)
             plane1_range = np.linspace(plane1_min, plane1_max, 400)
             xgrid, ygrid = np.meshgrid(plane0_range, plane1_range)
-            
+
             n_pts = xgrid.size
             CV_grid_init = np.zeros([n_pts, n_cv])
             CV_grid_init[:, p_idxs[0]] = xgrid.flatten()
             CV_grid_init[:, p_idxs[1]] = ygrid.flatten()
             CV_grid_init[:, self._level_cv_idx] = val_level
-            
+
             # Burner-stabilized boundary filter
             plane0_grid = CV_grid_init[:, p_idxs[0]]
             plane1_grid = CV_grid_init[:, p_idxs[1]]
             h_limit = ((plane1_at_unb - plane1_min) * plane0_grid +
                        (plane1_min * plane0_unb - plane1_at_unb * plane0_b)) / (plane0_unb - plane0_b)
             idx_keep = plane1_grid >= h_limit
-            
+
             CV_grid_norm_init = self._scaler.transform(CV_grid_init)
             CV_grid_norm = CV_grid_norm_init[idx_keep, :]
-            
+
             hull = ConvexHull(CV_grid_norm[:, p_idxs])
             x_hull = CV_grid_norm[hull.vertices, p_idxs[0]]
             y_hull = CV_grid_norm[hull.vertices, p_idxs[1]]
@@ -1288,10 +1288,10 @@ class SU2TableGenerator:
 
         x_refinement = CV_grid_norm_init[idx_ref, p_idxs[0]]
         y_refinement = CV_grid_norm_init[idx_ref, p_idxs[1]]
-        
+
         n_ref_initial = len(x_refinement)
         print("  Found %d refinement points above threshold %.3f" % (n_ref_initial, self._curvature_threshold))
-        
+
         # Early subsampling if too many points (to reduce memory before adding boundary points)
         N_max_initial = self._max_refinement_seeds * 2  # Allow 2x for boundary additions
         if n_ref_initial > N_max_initial:

@@ -321,6 +321,48 @@ class DataGenerator_Cantera(DataGenerator_Base):
         self.__SynchronizeSettings()
         return
 
+    def SetFreeFlameRefineCriteria(self, **kwargs):
+        """Set refinement criteria for free-flame solver using the existing setRefinementCriteria method.
+
+        This is a convenience wrapper that calls setRefinementCriteria with flamelet_type="FREEFLAME".
+
+        :param ratio: refinement ratio
+        :type ratio: int, optional
+        :param slope: refinement slope criterion
+        :type slope: float, optional
+        :param curve: refinement curvature criterion
+        :type curve: float, optional
+        :param prune: refinement prune criterion
+        :type prune: float, optional
+        """
+        ratio = kwargs.get('ratio', 2)
+        slope = kwargs.get('slope', 0.025)
+        curve = kwargs.get('curve', 0.025)
+        prune = kwargs.get('prune', 0.01)
+        self.setRefinementCriteria("FREEFLAME", ratio, slope, curve, prune)
+        return
+
+    def SetBurnerFlameRefineCriteria(self, **kwargs):
+        """Set refinement criteria for burner-flame solver using the existing setRefinementCriteria method.
+
+        This is a convenience wrapper that calls setRefinementCriteria with flamelet_type="BURNERFLAME".
+
+        :param ratio: refinement ratio
+        :type ratio: int, optional
+        :param slope: refinement slope criterion
+        :type slope: float, optional
+        :param curve: refinement curvature criterion
+        :type curve: float, optional
+        :param prune: refinement prune criterion
+        :type prune: float, optional
+        """
+        ratio = kwargs.get('ratio', 2)
+        slope = kwargs.get('slope', 0.025)
+        curve = kwargs.get('curve', 0.025)
+        prune = kwargs.get('prune', 0.01)
+        self.setRefinementCriteria("BURNERFLAME", ratio, slope, curve, prune)
+        return
+
     def SetNpMdotExtra(self, n_extra:int):
         """Set the number of interpolation steps for extra interpolated burner-stabilized flamelets.
 

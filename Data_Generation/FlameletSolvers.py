@@ -274,13 +274,70 @@ class FlameletSolver_Cantera:
         return
 
     def setGridRefinementCriteria(self, ratio:int=2, slope:float=0.025, curve:float=0.025, prune=0.01):
+        """Set grid refinement criteria using positional parameters.
+
+        :param ratio: refinement ratio (default 2)
+        :type ratio: int, optional
+        :param slope: refinement slope criterion (default 0.025)
+        :type slope: float, optional
+        :param curve: refinement curvature criterion (default 0.025)
+        :type curve: float, optional
+        :param prune: refinement prune criterion (default 0.01)
+        :type prune: float, optional
+        """
         self.__grid_refinement_ratio = ratio
         self.__grid_refinement_curve = curve
         self.__grid_refinement_prune = prune
         self.__grid_refinement_slope = slope
         return
 
+    def setRefinementCriteria(self, flamelet_type:str="COUNTERFLAME", **kwargs):
+        """Set refinement criteria for a specific flamelet type using keyword arguments.
+
+        Supports Cantera refinement parameters: ratio, slope, curve, prune.
+
+        :param flamelet_type: Type of flamelet ('COUNTERFLAME', 'FREEFLAME', 'BURNERFLAME'), defaults to 'COUNTERFLAME'
+        :type flamelet_type: str, optional
+        :param ratio: refinement ratio (default 3 for counterflame)
+        :type ratio: int, optional
+        :param slope: refinement slope criterion (default 0.04 for counterflame)
+        :type slope: float, optional
+        :param curve: refinement curvature criterion (default 0.06 for counterflame)
+        :type curve: float, optional
+        :param prune: refinement prune criterion (default 0.02 for counterflame)
+        :type prune: float, optional
+        :raises ValueError: if unsupported flamelet type is provided
+        """
+        supported_types = ["COUNTERFLAME", "FREEFLAME", "BURNERFLAME"]
+        if flamelet_type not in supported_types:
+            raise ValueError(f"Unsupported flamelet type '{flamelet_type}'. Supported types: {supported_types}")
+
+        # Extract refinement parameters with defaults based on flamelet type
+        if flamelet_type == "COUNTERFLAME":
+            default_ratio = 3
+            default_slope = 0.04
+            default_curve = 0.06
+            default_prune = 0.02
+        else:  # FREEFLAME, BURNERFLAME
+            default_ratio = 2
+            default_slope = 0.025
+            default_curve = 0.025
+            default_prune = 0.01
+
+        ratio = kwargs.get('ratio', default_ratio)
+        slope = kwargs.get('slope', default_slope)
+        curve = kwargs.get('curve', default_curve)
+        prune = kwargs.get('prune', default_prune)
+
+        self.setGridRefinementCriteria(ratio=ratio, slope=slope, curve=curve, prune=prune)
+        return
+
     def getGridRefinementCriteria(self):
+        """Get current grid refinement criteria.
+
+        :return: tuple of (ratio, slope, curve, prune)
+        :rtype: tuple
+        """
         return self.__grid_refinement_ratio, self.__grid_refinement_slope, self.__grid_refinement_curve, self.__grid_refinement_prune
 
     def setCanteraVerbose(self, verbose_level:int=0):
