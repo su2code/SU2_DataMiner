@@ -41,12 +41,11 @@ config.gpu_options.allow_growth = True
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 
-import CoolProp as CoolP
-import CoolProp.CoolProp as CP
 
 from Common.DataDrivenConfig import Config_NICFD
 from Common.CommonMethods import readStateDataFromFile
 from Common.Properties import DefaultSettings_NICFD, EntropicVars
+from Data_Generation.DataGenerator_NICFD import DataGenerator_CoolProp
 from Manifold_Generation.MLP.Trainer_Base import TensorFlowFit,PhysicsInformedTrainer,TrainMLP
 
 LabelPairing = {EntropicVars.s.name:r"Entropy $(s)[J/kg]$",\
@@ -57,45 +56,6 @@ LabelPairing = {EntropicVars.s.name:r"Entropy $(s)[J/kg]$",\
                 EntropicVars.dTde_rho.name:r"Temperature-energy derivative $\left(\left.\frac{\partial T}{\partial e}\right|_\rho\right)$",\
                 EntropicVars.dpdrho_e.name:r"Pressure-density derivative $\left(\left.\frac{\partial p}{\partial \rho}\right|_e\right)$",\
                 EntropicVars.dpde_rho.name:r"Pressure-energy derivative $\left(\left.\frac{\partial p}{\partial e}\right|_\rho\right)$"}
-
-def GetStateVector(fluid:CP.AbstractState):
-    """Extract the fluid thermodynamic properties from the CoolProp abstract state object.
-
-    :param fluid: CoolProp abstract state of the equation of state.
-    :type fluid: CoolProp.CoolProp.AbstractState
-    :return: thermodynamic state properties, phase
-    :rtype: np.ndarray, bool
-    """
-    state_vector_vals = np.ones(EntropicVars.N_STATE_VARS.value)
-    correct_phase = True
-    accepted_phases:list[int] = [CoolP.iphase_gas, CoolP.iphase_supercritical_gas, CoolP.iphase_supercritical]
-    if fluid.phase() in accepted_phases:
-        state_vector_vals[EntropicVars.s.value] = fluid.smass()
-        state_vector_vals[EntropicVars.dsde_rho.value] = fluid.first_partial_deriv(CP.iSmass, CP.iUmass, CP.iDmass)
-        state_vector_vals[EntropicVars.dsdrho_e.value] = fluid.first_partial_deriv(CP.iSmass, CP.iDmass, CP.iUmass)
-        state_vector_vals[EntropicVars.d2sde2.value] = fluid.second_partial_deriv(CP.iSmass, CP.iUmass, CP.iDmass, CP.iUmass, CP.iDmass)
-        state_vector_vals[EntropicVars.d2sdedrho.value] = fluid.second_partial_deriv(CP.iSmass, CP.iUmass, CP.iDmass, CP.iDmass, CP.iUmass)
-        state_vector_vals[EntropicVars.d2sdrho2.value] = fluid.second_partial_deriv(CP.iSmass, CP.iDmass, CP.iUmass, CP.iDmass, CP.iUmass)
-        state_vector_vals[EntropicVars.Density.value] = fluid.rhomass()
-        state_vector_vals[EntropicVars.Energy.value] = fluid.umass()
-        state_vector_vals[EntropicVars.T.value] = fluid.T()
-        state_vector_vals[EntropicVars.p.value] = fluid.p()
-        state_vector_vals[EntropicVars.c2.value] = fluid.speed_sound()**2
-        state_vector_vals[EntropicVars.dTde_rho.value] = fluid.first_partial_deriv(CP.iT, CP.iUmass, CP.iDmass)
-        state_vector_vals[EntropicVars.dTdrho_e.value] = fluid.first_partial_deriv(CP.iT, CP.iDmass, CP.iUmass)
-        state_vector_vals[EntropicVars.dpde_rho.value] = fluid.first_partial_deriv(CP.iP, CP.iUmass, CP.iDmass)
-        state_vector_vals[EntropicVars.dpdrho_e.value] = fluid.first_partial_deriv(CP.iP, CP.iDmass, CP.iUmass)
-        state_vector_vals[EntropicVars.dhde_rho.value] = fluid.first_partial_deriv(CP.iHmass, CP.iUmass, CP.iDmass)
-        state_vector_vals[EntropicVars.dhdrho_e.value] = fluid.first_partial_deriv(CP.iHmass, CP.iDmass, CP.iUmass)
-        state_vector_vals[EntropicVars.dhdp_rho.value] = fluid.first_partial_deriv(CP.iHmass, CP.iP, CP.iDmass)
-        state_vector_vals[EntropicVars.dhdrho_p.value] = fluid.first_partial_deriv(CP.iHmass, CP.iDmass, CP.iP)
-        state_vector_vals[EntropicVars.dsdp_rho.value] = fluid.first_partial_deriv(CP.iSmass, CP.iP, CP.iDmass)
-        state_vector_vals[EntropicVars.dsdrho_p.value] = fluid.first_partial_deriv(CP.iSmass, CP.iDmass, CP.iP)
-        state_vector_vals[EntropicVars.cp.value] = fluid.cpmass()
-    else:
-        correct_phase = False
-        state_vector_vals[:] = None
-    return state_vector_vals, correct_phase
 
 def ComputeRhoEGridData(config:Config_NICFD):
     """Compute the fluid thermodynamic properties for a coarse rho-e grid for visualization purposes.
@@ -117,16 +77,18 @@ def ComputeRhoEGridData(config:Config_NICFD):
 
     state_cp = np.empty([Np_x, Np_y, EntropicVars.N_STATE_VARS.value])
     state_cp[:] = np.nan
-    fluid = CP.AbstractState(config.GetEquationOfState(), config.GetFluid())
+    dg = DataGenerator_CoolProp(config)
+    
     for i in range(Np_x):
         for j in range(Np_y):
             rho = xx[i,j]
             e = yy[i,j]
             state_cp[i,j,EntropicVars.Density.value] = rho
             state_cp[i,j,EntropicVars.Energy.value] = e
+            
             try:
-                fluid.update(CP.DmassUmass_INPUTS, rho, e)
-                state_vector_vals, correct_phase = GetStateVector(fluid)
+                dg.UpdateFluid(rho, e)
+                state_vector_vals, correct_phase = dg.GetStateVector()
                 if correct_phase:
                     state_cp[i,j,:] = state_vector_vals
             except:
