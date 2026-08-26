@@ -21,3 +21,4 @@ pydata-sphinx-theme
 meshio==5.3.5
 concave_hull==0.1.2
 ruff==0.15.13
+shapely==2.1.2
