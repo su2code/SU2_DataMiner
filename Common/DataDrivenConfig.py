@@ -1902,8 +1902,7 @@ class Config_FGM(Config):
         """
 
         self.__preferential_diffusion = use_PD
-        if not self.__custom_Le_av_set:
-            self.SetAverageLewisNumbers()
+        self.SetAverageLewisNumbers()
 
         return
 

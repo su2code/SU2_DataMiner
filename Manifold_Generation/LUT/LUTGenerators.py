@@ -91,10 +91,21 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
     
     def _passRefinementOptions(self, mesher:MeshThermodynamicPlane):
         if self._Config.TwoPhase():
-            rhoe_saturation_curve = self.__datagenerator.ComputeSaturationCurve(N_samples=2000)
-            saturation_curve_pts_scaled = self._scaler_controlling_variables.transform(rhoe_saturation_curve)
+            saturation_curve_pts_scaled = self.__calculateSaturationCurvePoints()
             mesher.setSaturationCurvePoints(saturation_curve_pts_scaled)
+
         return super()._passRefinementOptions(mesher)
+
+    def __calculateSaturationCurvePoints(self):
+        self.__datagenerator.GenerateSaturationCurveInterpolator()
+        n_samples = 5000
+        rho_saturation_curve = self.__datagenerator.ComputeSaturationCurve(N_samples=n_samples)[:,0]
+        rho_min, rho_max = np.min(rho_saturation_curve), np.max(rho_saturation_curve)
+        rho_saturation_curve = np.linspace(rho_min, rho_max, n_samples)
+        e_saturation_curve = self.__datagenerator.GetSaturationCurveStaticEnergy(rho_saturation_curve)
+        rhoe_saturation_curve = np.column_stack((rho_saturation_curve, e_saturation_curve))
+        saturation_curve_pts_scaled = self._scaler_controlling_variables.transform(rhoe_saturation_curve)
+        return saturation_curve_pts_scaled
     
     def _initiateMesher(self):
         return MeshThermodynamicPlane()
