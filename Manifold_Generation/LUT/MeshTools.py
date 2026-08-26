@@ -3,6 +3,7 @@ import gmsh
 from concave_hull import concave_hull, concave_hull_indexes
 from collections.abc import Callable
 from Common.CommonMethods import shoelace, FiniteDifferenceDerivative
+from shapely.geometry import Point, Polygon
 
 def default_refinement_function(this, x:float, y:float, z:float):
     return 1.0
@@ -424,19 +425,13 @@ class MeshThermodynamicPlane(Mesh2DPlane):
     def __clipSaturationCurveToPlane(self, pts_offset_lower:np.ndarray[float], pts_offset_upper:np.ndarray[float]):
 
         hull_pts_orig = concave_hull(self._pointCloud_hullNodes, length_threshold=self._base_cell_size)
-        ref_area = shoelace(hull_pts_orig)
+        polygon_thermodynamic_plane = Polygon(hull_pts_orig)
         within_hull = np.zeros(len(self.__saturation_curve_points),dtype=bool)
 
         for i in range(len(self.__saturation_curve_points)):
-            XY_with_pt = np.vstack((self._pointCloud_hullNodes[:,:2], pts_offset_upper[i,:]))
-            hull_n = concave_hull(XY_with_pt, length_threshold=self._base_cell_size)
-            area_n = shoelace(hull_n)
-            within_hull_upper = (area_n <= ref_area )
-            XY_with_pt = np.vstack((self._pointCloud_hullNodes[:,:2], pts_offset_lower[i,:]))
-            hull_n = concave_hull(XY_with_pt, length_threshold=self._base_cell_size)
-            area_n = shoelace(hull_n)
-            within_hull_lower = (area_n <= ref_area )
-            within_hull[i] = (within_hull_upper and within_hull_lower)
+            pt_upper = Point(pts_offset_upper[i])
+            pt_lower = Point(pts_offset_lower[i])
+            within_hull[i] = polygon_thermodynamic_plane.contains(pt_upper) and polygon_thermodynamic_plane.contains(pt_lower)
 
         return within_hull
     
