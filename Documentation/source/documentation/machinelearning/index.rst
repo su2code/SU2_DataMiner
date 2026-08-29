@@ -2,6 +2,7 @@ Machine Learning Methods
 ========================
 
 .. toctree::
+   general
    FGM
    NICFD
    hpoptimization

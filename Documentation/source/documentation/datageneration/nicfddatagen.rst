@@ -17,17 +17,37 @@ This page provides the documentation on the methods used for generating thermody
 .. autofunction:: Data_Generation.DataGenerator_NICFD.DataGenerator_CoolProp.__init__
 
 
+.. _flamelet_data_gen_workflow: 
+
+Process Diagram 
+---------------
+
+# TODO: show solution diagram 
+
+# TODO: describe steps 
+
+
+
 .. _thermodynamicstates:
 
 Thermodynamic State Calculations
 --------------------------------
 
+# TODO: describe how thermophysical properties are calculated in single and two-phase regions.
+
+
 .. autofunction:: Data_Generation.DataGenerator_NICFD.DataGenerator_CoolProp.PreprocessData
+
+
+# TODO: describe how data ranges are automatically determined 
+
 
 .. autofunction:: Data_Generation.DataGenerator_NICFD.DataGenerator_CoolProp.ComputeData
 
 .. autofunction:: Data_Generation.DataGenerator_NICFD.DataGenerator_CoolProp.SaveData
 
+
+# TODO: describe newly added methods 
 
 
 .. _configoverwrite_nicfd:

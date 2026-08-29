@@ -11,11 +11,37 @@ Generation of Flamelet Data
 
 This page provides the documentation on the methods used for generating flamelet data with *SU2 DataMiner*. 
 
+.. _flamelet_data_gen_workflow: 
+
+Process Diagram 
+---------------
+
+.. figure:: fgm_data_generation.png
+   :scale: 75 %
+   :alt: 
+
+   Illustration of the process used to generate the data for the various flamelet types for a specific equivalence ratio or mixture fraction :math:`\phi_i`.
+
+
+.. figure:: fgm_data_output.png
+   :scale: 75 %
+   :alt: 
+
+   Illustration of data structures produced while generating flamelet data. The three folders for adiabatic and burner-stabilized flamelets and equilibrium data are generated under the main output directory specified in the configuration.
+
+
+      
+# TODO: describe steps 
+
+# TODO: describe which data are saved and how to retrieve dependent variables.
 
 .. _flameletgen:
 
 Flamelet Calculations
 ---------------------
+
+# TODO: solution processes for each flamelet type 
+
 
 .. autofunction:: Data_Generation.DataGenerator_FGM.DataGenerator_Cantera.ComputeFreeFlames
 
