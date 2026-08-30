@@ -786,10 +786,13 @@ class Config_FGM(Config):
     __generate_extra_interpolated_burnerflames:bool = True                    # Generate extra interpolated burner-stabilized flamelets
     __generate_equilibrium:bool = DefaultSettings_FGM.include_equilibrium     # Generate chemical equilibrium data
     __generate_counterflames:bool = DefaultSettings_FGM.include_counterflames   # Generate counter-flow diffusion flamelets.
+    __counterflow_fixed_strain:bool = DefaultSettings_FGM.counterflow_fixed_strain  # Fixed-strain mode for counterflow flames.
+    __counterflow_strain_rate:float = DefaultSettings_FGM.counterflow_strain_rate   # Global strain rate [1/s] for fixed-strain mode.
 
     __flamelet_types:list[str] = [FlameletSolverOptions[0]]
 
     __write_MATLAB_files:bool = False  # Write TableGenerator compatible flamelet files.
+    __save_mole_fractions:bool = DefaultSettings_FGM.save_mole_fractions  # Save mole fractions (X-species) in flamelet CSV output.
 
     gas:ct.Solution = None  # Cantera solution object.
     __species_in_mixture:list[str] = None # Species names in mixture.
@@ -859,6 +862,13 @@ class Config_FGM(Config):
             self.__dict__ = loaded_config.__dict__.copy()
             print("Loaded configuration file with name " + loaded_config.GetConfigName())
         else:
+            # __flamelet_types is only ever mutated in place (append/remove) by
+            # includeFlameletType/excludeFlameletType. Without assigning it here,
+            # it stays a class-level attribute shared by every Config_FGM instance
+            # in the process and is never part of self.__dict__, so it silently
+            # does not survive a SaveConfig()/Config_FGM(load_file) round trip.
+            self.__flamelet_types = [FlameletSolverOptions[0]]
+
             self.SetAlphaExpo(DefaultSettings_FGM.init_learning_rate_expo)
             self.SetLRDecay(DefaultSettings_FGM.learning_rate_decay)
             self.SetBatchExpo(DefaultSettings_FGM.batch_size_exponent)
@@ -968,7 +978,10 @@ class Config_FGM(Config):
         if self.__generate_equilibrium:
             print("-Chemical equilibrium data")
         if self.__generate_counterflames:
-            print("-Counter-flow diffusion flamelet data")
+            if self.__counterflow_fixed_strain:
+                print("-Counter-flow diffusion flamelet data (fixed strain rate: %.1f 1/s)" % self.__counterflow_strain_rate)
+            else:
+                print("-Counter-flow diffusion flamelet data")
         print("")
 
         print("Flamelet manifold data characteristics: ")
@@ -1526,9 +1539,11 @@ class Config_FGM(Config):
             self.__flamelet_types.remove(flamelet_type)
 
         self.__checkFlameletTypes()
-        if len(self.__flamelet_types) == 0:
-            raise Exception("At least one flamelet type should be included in the manifold")
-    
+        # Note: the list may be temporarily empty here while a script is still
+        # calling Run*Flames(False)/Run*Flames(True) in sequence to select which
+        # flamelet types to generate. Validation of a non-empty selection happens
+        # where the config is actually used (e.g. ComputeFlameletData).
+
         return
 
     def getFlameletTypes(self):
@@ -1543,7 +1558,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_freeflames = input
-        self.includeFlameletType("FREEFLAME")
+        if input:
+            self.includeFlameletType("FREEFLAME")
+        else:
+            self.excludeFlameletType("FREEFLAME")
         return
     def RunBurnerFlames(self, input:bool=DefaultSettings_FGM.include_burnerflames):
         """
@@ -1554,7 +1572,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_burnerflames = input
-        self.includeFlameletType("BURNERFLAME")
+        if input:
+            self.includeFlameletType("BURNERFLAME")
+        else:
+            self.excludeFlameletType("BURNERFLAME")
         return
 
     def RunEquilibrium(self, input:bool=DefaultSettings_FGM.include_equilibrium):
@@ -1566,7 +1587,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_equilibrium = input
-        self.includeFlameletType("EQUILIBRIUM")
+        if input:
+            self.includeFlameletType("EQUILIBRIUM")
+        else:
+            self.excludeFlameletType("EQUILIBRIUM")
         return
 
     def RunCounterFlames(self, input:bool=DefaultSettings_FGM.include_counterflames):
@@ -1578,7 +1602,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_counterflames = input
-        self.includeFlameletType("COUNTERFLAME")
+        if input:
+            self.includeFlameletType("COUNTERFLAME")
+        else:
+            self.excludeFlameletType("COUNTERFLAME")
         return
 
     def RunExtraInterpolatedBurnerFlames(self, input:bool=True):
@@ -1590,7 +1617,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_extra_interpolated_burnerflames = input
-        self.includeFlameletType("INT_BURNERFLAME")
+        if input:
+            self.includeFlameletType("INT_BURNERFLAME")
+        else:
+            self.excludeFlameletType("INT_BURNERFLAME")
         return
 
     def GenerateFreeFlames(self):
@@ -1629,6 +1659,52 @@ class Config_FGM(Config):
         """
         return self.__generate_counterflames
 
+    def SetCounterFlowFixedStrain(self, fixed:bool=True):
+        """
+        Select fixed global strain rate mode for counter-flow diffusion flames.
+
+        When True, the counter-flow flamelet solver holds the global strain rate
+        fixed at the value set by SetCounterFlowStrainRate while sweeping over
+        the reactant temperature range. When False (default), the strain rate
+        keeps its solver-level default.
+
+        :param fixed: enable fixed-strain mode.
+        :type fixed: bool
+        """
+        self.__counterflow_fixed_strain = fixed
+        return
+
+    def GetCounterFlowFixedStrain(self) -> bool:
+        """
+        Whether fixed global strain rate mode is enabled for counter-flow flames.
+
+        :return: fixed-strain mode is active.
+        :rtype: bool
+        """
+        return self.__counterflow_fixed_strain
+
+    def SetCounterFlowStrainRate(self, strain_rate:float):
+        """
+        Set the global strain rate used in fixed-strain counter-flow flame mode.
+
+        :param strain_rate: global strain rate in 1/s.
+        :type strain_rate: float
+        :raises Exception: if strain_rate is not strictly positive.
+        """
+        if strain_rate <= 0:
+            raise Exception("Counter-flow strain rate must be strictly positive.")
+        self.__counterflow_strain_rate = strain_rate
+        return
+
+    def GetCounterFlowStrainRate(self) -> float:
+        """
+        Return the global strain rate used in fixed-strain counter-flow flame mode.
+
+        :return: global strain rate [1/s].
+        :rtype: float
+        """
+        return self.__counterflow_strain_rate
+
     def GenerateExtraInterpolatedBurnerFlames(self):
         """
         Whether the manifold data contains extra interpolated burner-stabilized flame data.
@@ -1655,6 +1731,25 @@ class Config_FGM(Config):
         :rtype: bool
         """
         return self.__write_MATLAB_files
+
+    def SetSaveMoleFractions(self, save_mole_fractions:bool=True):
+        """
+        Enable or disable saving mole fractions (X-species) in flamelet CSV files.
+
+        :param save_mole_fractions: whether to save mole fractions alongside mass fractions.
+        :type save_mole_fractions: bool
+        """
+        self.__save_mole_fractions = save_mole_fractions
+        return
+
+    def GetSaveMoleFractions(self) -> bool:
+        """
+        Check whether mole fractions (X-species) should be saved in flamelet CSV files.
+
+        :return: True if mole fractions should be saved.
+        :rtype: bool
+        """
+        return self.__save_mole_fractions
 
     def SetProgressVariableDefinition(self, pv_species:list[str]=DefaultSettings_FGM.pv_species, pv_weights:list[float]=DefaultSettings_FGM.pv_weights):
         """

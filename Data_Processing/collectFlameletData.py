@@ -461,6 +461,7 @@ class FlameletConcatenator:
         :type input: list[str]
         """
         self.__Config.SetLookUpVariables(input)
+        self.__LookUp_vars = list(input)
         return
 
     def SetFlameletDir(self, input:str):

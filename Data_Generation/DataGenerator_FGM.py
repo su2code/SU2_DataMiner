@@ -145,7 +145,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
 
     def setRefinementCriteria(self, flamelet_type:str, ratio:float=3, slope:float=0.03, curve:float=0.03, prune:float=0.01):
         if flamelet_type not in self.__flameletSolverDict.keys():
-            raise Exception("%s is included in the available flamelet types" % flamelet_type)
+            raise Exception("%s is not included in the available flamelet types" % flamelet_type)
         self.__flameletSolverDict[flamelet_type].setGridRefinementCriteria(ratio, slope, curve, prune)
         return
     
@@ -416,7 +416,7 @@ class DataGenerator_Cantera(DataGenerator_Base):
         return
     
 def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors:int=2, loglevel:int=0,
-                        free_flame_refine:dict=None, burner_flame_refine:dict=None):
+                        free_flame_refine:dict=None, burner_flame_refine:dict=None, counter_flame_refine:dict=None):
     """Generate flamelet data according to Config_FGM settings either in serial or parallel.
 
     :param Config: Config_FGM class containing manifold and flamelet generation settings.
@@ -433,6 +433,9 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
     :param burner_flame_refine: Cantera burner-flame refinement criteria dict with keys ratio, slope, curve, prune.
         If None, the DataGenerator_Cantera defaults are used.
     :type burner_flame_refine: dict, optional
+    :param counter_flame_refine: Cantera counter-flow flame refinement criteria dict with keys ratio, slope, curve, prune.
+        If None, the DataGenerator_Cantera defaults are used.
+    :type counter_flame_refine: dict, optional
     :raises Exception: If number of processors is set to zero when running in parallel.
     """
 
@@ -460,9 +463,11 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
         F = DataGenerator_Cantera(Config)
         F.SetLoglevel(loglevel)
         if free_flame_refine is not None:
-            F.SetFreeFlameRefineCriteria(**free_flame_refine)
+            F.setRefinementCriteria("FREEFLAME", **free_flame_refine)
         if burner_flame_refine is not None:
-            F.SetBurnerFlameRefineCriteria(**burner_flame_refine)
+            F.setRefinementCriteria("BURNERFLAME", **burner_flame_refine)
+        if counter_flame_refine is not None:
+            F.setRefinementCriteria("COUNTERFLAME", **counter_flame_refine)
         return F
 
     # Set up Cantera flamelet generator object
@@ -472,7 +477,7 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
         F.computePremixedFlameletsFor(mix_input)
 
     if run_parallel:
-        F = DataGenerator_Cantera(Config)
+        F = _make_generator()
         F.computeNonPremixedFlamelets()
 
         with threadpool_limits(limits=1):

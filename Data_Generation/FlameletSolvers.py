@@ -421,7 +421,12 @@ class FlameletSolver_Cantera:
         mass_fractions = self._flameletSolution.Y
         species_labels = ["Y-%s" % sp for sp in self._canteraSolution.species_names]
         self._concatenateThermoChemicalData(species_labels, mass_fractions)
-        
+
+        if self._Config.GetSaveMoleFractions():
+            molar_fractions = self._flameletSolution.X
+            molar_species_labels = ["X-%s" % sp for sp in self._canteraSolution.species_names]
+            self._concatenateThermoChemicalData(molar_species_labels, molar_fractions)
+
         self._collectSourceTermData()
 
         if solution_1D:
@@ -1241,8 +1246,11 @@ class CounterFlowDiffusionFlameSolver(FlameletSolver_Cantera):
         self._plotLabel = "Counter-flow diffusion flame"
         self._is_premixed = False
         self._is_scalar = False
+        self._n_1D_iterations = self._Config.GetNpTemp()
         self.setInitialGrid(2e-1, 300)
         self.setGridRefinementCriteria(ratio=3, slope=0.04, curve=0.06, prune=0.02)
+        if self._Config.GetCounterFlowFixedStrain():
+            self.setStrainRate(self._Config.GetCounterFlowStrainRate())
         return
     
     def _initializeFlameletSolver(self):

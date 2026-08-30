@@ -218,6 +218,11 @@ class DefaultSettings_FGM(DefaultProperties):
     include_equilibrium:bool = True
     include_counterflames:bool = False
 
+    counterflow_fixed_strain:bool = False   # False = default strain-rate sweep; True = fixed global strain rate
+    counterflow_strain_rate:float = 56.0    # global strain rate [1/s] used when counterflow_fixed_strain is True
+
+    save_mole_fractions:bool = False  # Save mole fractions (X-species) in flamelet CSV output
+
     affinity_threshold:float = 0.7
     output_file_header:str = "flamelet_data"
     boundary_file_header:str = "boundary_data"
