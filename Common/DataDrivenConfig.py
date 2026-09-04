@@ -1496,17 +1496,28 @@ class Config_FGM(Config):
         return self.__run_mixture_fraction
 
     def includeFlameletType(self, flamelet_type:str="FREEFLAME"):
+        """Specify flamelet type to be included in the flamelet-generated manifold.
 
+        :param flamelet_type: label refering to flamelet type, defaults to "FREEFLAME"
+        :type flamelet_type: str, optional
+        :raises Exception: if flamelet type is not supported.
+        """
+        
         if flamelet_type not in FlameletSolverOptions:
             raise Exception("%s is not recognized as a viable flamelet type" % flamelet_type)
         
         if flamelet_type not in self.__flamelet_types:
-            self.__flamelet_types.append(flamelet_type)
+            self.__flamelet_types += [flamelet_type]
         
         return
 
     def setFlameletTypes(self, flamelet_types:list[str]):
-        self.__flamelet_types = flamelet_types.copy()
+        """Specify flamelet types in the manifold as a list of labels.
+
+        :param flamelet_types: list with flamelet type labels.
+        :type flamelet_types: list[str]
+        """
+        self.__flamelet_types = flamelet_types
         self.__checkFlameletTypes()
         return
     
@@ -1519,6 +1530,13 @@ class Config_FGM(Config):
         return
     
     def excludeFlameletType(self, flamelet_type:str):
+        """Exclude specific flamelet type from the manifold.
+
+        :param flamelet_type: label of the flamelet type to be excluded.
+        :type flamelet_type: str
+        :raises Exception: if specified label is not recognized.
+        :raises Exception: if this action removes all flamelet types from the manifold.
+        """
         if flamelet_type not in FlameletSolverOptions:
             raise Exception("%s is not recognized as a viable flamelet type" % flamelet_type)
         
@@ -1532,6 +1550,11 @@ class Config_FGM(Config):
         return
 
     def getFlameletTypes(self):
+        """Get labels of flamelet types included in the manifold
+
+        :return: list of flamelet labels.
+        :rtype: list[str]
+        """
         return self.__flamelet_types
 
     def RunFreeFlames(self, input:bool=DefaultSettings_FGM.include_freeflames):
