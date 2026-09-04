@@ -120,6 +120,12 @@ class FlameletSolver_Cantera:
         self.setMixtureStatus(val_mixture_status)
 
         vals_input_settings = self._prepareSettingRange()
+        self._iterateFlamelets(vals_input_settings, save)
+
+        self.resetRestart()
+        return
+
+    def _iterateFlamelets(self, vals_input_settings, save):
         for i, q in enumerate(vals_input_settings):
             solver_specific_settings = self._writeSolverSettings(i, q)
             self._parseInputSettings(solver_specific_settings)
@@ -128,9 +134,7 @@ class FlameletSolver_Cantera:
                 self.saveFlameletSolution()
             if not self._keep_iterating:
                 break
-
-        self.resetRestart()
-        return
+        return 
     
     def saveFlameletSolution(self):
         """Store flamelet solution in appropriately named folder.
@@ -760,8 +764,8 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         deltaEnth_mdot = self._Config.GetMdotDHTarget()
         if deltaEnth_mdot > 0:
             self.__delta_enth = deltaEnth_mdot
-        else:
-            self._n_1D_iterations = self._Config.GetNpMdot()
+        
+        self._n_1D_iterations = self._Config.GetNpMdot()
         self.setReactantTemperature(self._Config.GetUnbTempBounds()[0])
         self.setGridRefinementCriteria(ratio=3, slope=0.15, curve=0.15, prune=0.05)
         self._initializeFlameletSolver()
@@ -778,6 +782,10 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
             raise Exception("Mass flow rate should be strictly positive.")
         self.__val_massflow = val_massflow_inlet
         return
+
+    def setAdiabaticMassFlow(self, val_ad_massflow:float):
+        self.__adiabatic_massflow = val_ad_massflow
+        return 
     
     def getReactantMassFlow(self):
         return self.__val_massflow
@@ -794,6 +802,12 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         return
     
     def retrieveSolverSettings(self, solvers:Dict[str, FlameletSolver_Cantera]):
+        """Retrieve adiabatic mass flow rate from the adiabatic flamelet solver.
+
+        :param solvers: dictionary of flamelet solvers for the current workflow
+        :type solvers: Dict[str, FlameletSolver_Cantera]
+        :raises Exception: if mass flow rate can not be retrieved.
+        """
         if "FREEFLAME" in solvers.keys():
             freeflame_solver:FreeFlameSolver = solvers["FREEFLAME"]
             self.__adiabatic_massflow = freeflame_solver.getMassFlowRate()
@@ -819,28 +833,47 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         mdot_max = 0.98 * self.__adiabatic_massflow
         mdot_min = 0.001 * self.__adiabatic_massflow
         if self.__iterate_enthalpy():
-            self._n_1D_iterations = 25
+            #self._n_1D_iterations = 10
             self.__delta_massflow = (mdot_max - mdot_min)/self._n_1D_iterations
             self.__val_massflow_enthalpy = mdot_max
         m_dot_range = np.linspace(mdot_max, mdot_min, self._n_1D_iterations+1)[:-1]
         return m_dot_range
+
+    def _iterateFlamelets(self, vals_input_settings, save):
+        if self.__iterate_enthalpy():
+            i=0
+            while self._keep_iterating:
+                solver_specific_settings = self._writeSolverSettings(i, 0)
+                self._parseInputSettings(solver_specific_settings)
+                self.startSolver()
+                if save:
+                    self.saveFlameletSolution()
+                i += 1
+        else:
+            super()._iterateFlamelets(vals_input_settings, save)
+        return 
     
     def _postProcessResults(self):
         super()._postProcessResults()
         if self.__iterate_enthalpy():
-            enth_current = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
-            if self.__enth_prev is not None:
-                delta_enth = abs(enth_current - self.__enth_prev)
-                scale_mdot = np.clip(self.__delta_enth/delta_enth, 0.2, 5.0)
-                self.__delta_massflow *= scale_mdot
-
-            self.__enth_prev = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
-            self.__val_massflow_enthalpy -= self.__delta_massflow
-            self._keep_iterating = (self.__val_massflow_enthalpy > 0.001*self.__adiabatic_massflow)
+            self.__update_mass_flow_rate()
         return
     
     def __iterate_enthalpy(self):
         return self.__delta_enth is not None
+
+    def __update_mass_flow_rate(self):
+        enth_current = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
+        if self.__enth_prev is not None:
+            delta_enth = abs(enth_current - self.__enth_prev)
+            scale_mdot = np.clip(self.__delta_enth/delta_enth, 0.2, 5.0)
+            self.__delta_massflow *= scale_mdot
+
+        self.__enth_prev = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
+        self.__val_massflow_enthalpy -= self.__delta_massflow
+        self._keep_iterating = (self.__val_massflow_enthalpy > 0.001*self.__adiabatic_massflow)
+        
+        return 
     
     def setInputVariable(self, val_input:float):
         self.setReactantMassFlow(val_input)
