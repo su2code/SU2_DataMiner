@@ -13,3 +13,12 @@ The adiabatic flamelet solver is a wrapper for the Cantera `FreeFlame <https://c
 
 When running batches of adiabatic flamelet simulations, the reactant temperature is linearly varied between the maximum and minimum reactant temperature specified in the :ref:`SU2 DataMiner configuration <FGM>`. 
 
+Several tutorials on running adiabatic flamelet simulations can be found on :ref:`this page <freeflame_tutorial>`.
+
+
+The value of the adiabatic mass flux must be retrieved when :ref:`burner-stabilized <flamelet_solver_burnerstabilized>` flamelets are included in the manifold.
+The adiabatic mass flux of the converged adiabatic flamelet solution can be retrieved with the following function:
+
+.. _adiabatic_mass_flux:
+
+.. autofunction:: Data_Generation.FlameletSolvers.FreeFlameSolver.getMassFlowRate

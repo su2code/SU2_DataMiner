@@ -92,6 +92,13 @@ The number of adiabatic and burner-stabilized flamelets that are generated for e
 
 .. autofunction:: Common.DataDrivenConfig.Config_FGM.GetNpTemp 
 
+
+.. autofunction:: Common.DataDrivenConfig.Config_FGM.SetNpMdot
+
+.. _enable_enth_delta_burnerflames:
+
+.. autofunction:: Common.DataDrivenConfig.Config_FGM.SetMdotDHTarget
+    
     
 FGM Controlling Variables 
 -------------------------

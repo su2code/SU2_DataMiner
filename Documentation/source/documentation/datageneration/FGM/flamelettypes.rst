@@ -7,10 +7,8 @@ Flamelet types in SU2 DataMiner
 The pages below link to the theoretical background and implementation of each type. 
 
 .. toctree::
+   flamelet_base.rst
    freeflame.rst
    burnerflame.rst
-   equilibrium.rst
-   interp_burnerflame.rst
-   flamelet_base.rst
    :maxdepth: 1
    
