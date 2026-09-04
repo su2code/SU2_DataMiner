@@ -13,7 +13,7 @@ freeflame = FreeFlameSolver(config)
 freeflame.setReactantTemperature(Tu)
 freeflame.setMixtureStatus(eq_ratio)
 freeflame.startSolver()
-solution = freeflame.getThermoChemicalData()
+solution = freeflame.getSolution()
 
 flame_velocity = solution["Velocity"].iloc[0]
 grid = np.array(solution["Distance"])

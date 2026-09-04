@@ -62,7 +62,7 @@ The following code snippet can be used to calculate the adiabatic flame speed us
     freeflame.setReactantTemperature(Tu)
     freeflame.setMixtureStatus(eq_ratio)
     freeflame.startSolver()
-    solution = freeflame.getThermoChemicalData()
+    solution = freeflame.getSolution()
 
     flame_velocity = solution["Velocity"].iloc[0]
 
