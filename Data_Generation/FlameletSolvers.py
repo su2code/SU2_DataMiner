@@ -82,6 +82,11 @@ class FlameletSolver_Cantera:
     _thermochemical_solution:pd.DataFrame = None    # Flamelet solution data
 
     def __init__(self, config_input:Config_FGM):
+        """Flamelet solver base class initializer.
+
+        :param config_input: SU2 DataMiner configuration from which the reaction mechanism, transport mechanism, and output directory are retrieved.
+        :type config_input: Config_FGM
+        """
         self._Config = config_input
         self._canteraSolution = ct.Solution(self._Config.GetReactionMechanism())
         return
@@ -182,11 +187,13 @@ class FlameletSolver_Cantera:
         return
     
     def _prepareFlameletSolver(self):
-        if not self._from_restart and not self._from_file:
-            self._initializeFlameletSolver()
-            self._flameletSolution.max_grid_points = self._max_grid_points
-        else:
-            self._flameletSolution = self._flameletSolutionForRestart
+        if not self._from_file:
+            if (not self._from_restart):
+                self._initializeFlameletSolver()
+                self._flameletSolution.max_grid_points = self._max_grid_points
+            else:
+                self._flameletSolution = self._flameletSolutionForRestart
+        
         return
     
     def __printToTerminal(self):
@@ -274,6 +281,17 @@ class FlameletSolver_Cantera:
         return
     
     def setGridRefinementCriteria(self, ratio:int=2, slope:float=0.025, curve:float=0.025, prune=0.01):
+        """Specify the settings for refining the mesh of the flamelet simulation. See https://cantera.org/dev/reference/onedim/grid-refinement.html for more details.
+
+        :param ratio: maximum ratio of grid length between adjacent elements, defaults to 2
+        :type ratio: int, optional
+        :param slope: maximum derivative in the solution between adjacent elements, defaults to 0.025
+        :type slope: float, optional
+        :param curve: maximum curvature in the solution between adjacent elements, defaults to 0.025
+        :type curve: float, optional
+        :param prune: remove grid nodes where curvature and slope falls below the specified value, defaults to 0.01
+        :type prune: float, optional
+        """
         self.__grid_refinement_ratio = ratio
         self.__grid_refinement_curve = curve
         self.__grid_refinement_prune = prune
@@ -400,7 +418,7 @@ class FlameletSolver_Cantera:
     def isBurning(self):
         return self._flamelet_is_burning
     
-    def getThermoChemicalData(self):
+    def getSolution(self):
         """Retrieve thermochemical state data extracted from flamelet solution.
 
         :return: flamelet solution data.
@@ -620,6 +638,11 @@ class FreeFlameSolver(FlameletSolver_Cantera):
     __mass_flow_rate:float = 0.0
 
     def __init__(self, config_input:Config_FGM):
+        """Adiabatic flamelet solver class. The reactant temperature and mixture status of the inflow boundary can be specified. The reaction mechanism and transport mechanism are retrieved from the configuration.
+
+        :param config_input: SU2 DataMiner configuration.
+        :type config_input: Config_FGM
+        """
         FlameletSolver_Cantera.__init__(self, config_input)
         self._flameletTypeOutputFolder = "freeflame_data"
         self._flamelet_type = "Freeflame"
@@ -1082,7 +1105,7 @@ class EquilibriumSolver(FlameletSolver_Cantera):
                 self.__is_lean = True
         return
 
-    def getThermoChemicalData(self):
+    def getSolution(self):
         return self.__accumulated_solution
     
     def getReactionProductData(self):
@@ -1187,7 +1210,7 @@ class CooledFlameInterpolator(FlameletSolver_Cantera):
     def retrieveSolverSettings(self, solvers:Dict[str, FlameletSolver_Cantera]):
         burnerflameSolver = solvers["BURNERFLAME"]
         equilibriumSolver = solvers["EQUILIBRIUM"]
-        self.setBurnerFlameData(burnerflameSolver.getThermoChemicalData())
+        self.setBurnerFlameData(burnerflameSolver.getSolution())
         self.setEquilibriumData(equilibriumSolver.getReactionProductData())
         return
     
