@@ -627,7 +627,7 @@ class PVOptimizer:
         return
 
     def __retrieveAdditionalData(self, flameletSolution:FlameletSolver_Cantera):
-        thermochemicalData = flameletSolution.getThermoChemicalData()
+        thermochemicalData = flameletSolution.getSolution()
         additionalData = pd.DataFrame()
         _, beta_h1, beta_h2, beta_Z = self._Config.ComputeBetaTerms(list(thermochemicalData.keys()), thermochemicalData.values)
         for var in self.__additional_variables:
@@ -655,7 +655,7 @@ class PVOptimizer:
             and flameletSolver.isPremixed()
     
     def __domainIsNotTooLong(self, flameletSolver:FlameletSolver_Cantera):
-        solutionData = flameletSolver.getThermoChemicalData()
+        solutionData = flameletSolver.getSolution()
         grid = solutionData[FGMVars.Distance.name]
         grid_lengh = max(grid) - min(grid)
         return grid_lengh < 0.15

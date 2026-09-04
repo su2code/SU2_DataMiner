@@ -217,7 +217,7 @@ class FlameletConcatenator:
             return (mixture_status-margin <= self.__mix_status_max) and (mixture_status+margin >= self.__mix_status_min)
         
     def __incrementNumberOfFlameletData(self, flameletSolver:FlameletSolver_Cantera):
-        thermochemical_solution = flameletSolver.getThermoChemicalData()
+        thermochemical_solution = flameletSolver.getSolution()
         self.__nFlameletDataPoints += thermochemical_solution.shape[0]
         self.__nFlamelets += 1
         return
@@ -274,7 +274,7 @@ class FlameletConcatenator:
         return
     
     def __retrieveFlameletSolution(self, flameletSolver:FlameletSolver_Cantera):
-        solutionData = flameletSolver.getThermoChemicalData()
+        solutionData = flameletSolver.getSolution()
 
         if self.__reactionProductsForLUT(flameletSolver):
             solutionData = solutionData.iloc[:self.__Np_equilibrium,:]
