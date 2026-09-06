@@ -16,7 +16,7 @@ Concat.IgnoreMixtureBounds(True)
 
 # Include NOx reaction rates and heat release in the flamelet data set.
 Concat.SetAuxilarySpecies(["H2", "CO2", "H2O", "CO", "NOx"])
-Concat.SetLookUpVars(["Heat_Release", "Density", "Y-OH", "X-H2", "X-CO2", "X-H2O", "X-CO"])
+Concat.SetLookUpVars(["Heat_Release", "Density", "Y-OH", "X-H2", "X-CO2", "X-H2O", "X-CO", "X-CH4", "X-O2"])
 
 # Apply source term and chemical equilibrium data corrections for table generation.
 Concat.WriteLUTData(True)

@@ -793,6 +793,7 @@ class Config_FGM(Config):
 
     __write_MATLAB_files:bool = False  # Write TableGenerator compatible flamelet files.
     __save_mole_fractions:bool = DefaultSettings_FGM.save_mole_fractions  # Save mole fractions (X-species) in flamelet CSV output.
+    __restart_from_existing_flamelets:bool = DefaultSettings_FGM.restart_from_existing_flamelets  # Skip re-solving flamelet points whose output CSV already exists.
 
     gas:ct.Solution = None  # Cantera solution object.
     __species_in_mixture:list[str] = None # Species names in mixture.
@@ -1750,6 +1751,32 @@ class Config_FGM(Config):
         :rtype: bool
         """
         return self.__save_mole_fractions
+
+    def SetRestartFromExisting(self, restart_from_existing:bool=True):
+        """
+        Enable or disable restarting flamelet generation from already-computed
+        solutions. When enabled, a flamelet solver skips re-solving any point in
+        its sweep whose output CSV already exists on disk (from a previous run),
+        loading it instead as the basis for that point and for warm-starting the
+        next point in the sweep. Useful for resuming an interrupted generation
+        run, or for iterating on downstream settings without recomputing an
+        already-converged sweep.
+
+        :param restart_from_existing: whether to skip re-solving existing points.
+        :type restart_from_existing: bool
+        """
+        self.__restart_from_existing_flamelets = restart_from_existing
+        return
+
+    def GetRestartFromExisting(self) -> bool:
+        """
+        Check whether flamelet generation should skip re-solving points whose
+        output CSV already exists on disk.
+
+        :return: True if existing flamelet solutions should be restarted from.
+        :rtype: bool
+        """
+        return self.__restart_from_existing_flamelets
 
     def SetProgressVariableDefinition(self, pv_species:list[str]=DefaultSettings_FGM.pv_species, pv_weights:list[float]=DefaultSettings_FGM.pv_weights):
         """

@@ -254,6 +254,14 @@ class fluidDataInterpolator:
             self.tuneTreeParameters()
         return
 
+    def getControllingVariableNodes(self):
+        """Scaled controlling variable values of the point cloud samples the interpolator was built from.
+
+        :return: scaled controlling variable data.
+        :rtype: np.ndarray[float]
+        """
+        return self.__controlling_variable_nodes
+
     def tuneTreeParameters(self):
 
         Np_total = np.shape(self.__controlling_variable_nodes)[0]
