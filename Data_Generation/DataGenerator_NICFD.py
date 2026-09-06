@@ -32,6 +32,7 @@ import numpy as np
 from tqdm import tqdm
 import csv
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 np.random.seed(2)
 
 #---------------------------------------------------------------------------------------------#
@@ -74,6 +75,7 @@ class DataGenerator_CoolProp(DataGenerator_Base):
 
     __fd_step_size_rho:float = 7e-3
     __fd_step_size_e:float = 7e-3
+    __saturation_curve_interpolator:interp1d = False
 
     def __init__(self, Config_in:Config_NICFD=None):
         DataGenerator_Base.__init__(self, Config_in=Config_in)
@@ -795,6 +797,14 @@ class DataGenerator_CoolProp(DataGenerator_Base):
         sat_curve=np.column_stack((rho_sat,e_sat))
         return sat_curve
 
+    def GenerateSaturationCurveInterpolator(self):
+        rhoe_sat_curve = self.ComputeSaturationCurve(4000)
+        self.__saturation_curve_interpolator = interp1d(rhoe_sat_curve[:,0], rhoe_sat_curve[:,1],kind="linear",bounds_error=False,fill_value="extrapolate")
+        return
+
+    def GetSaturationCurveStaticEnergy(self, val_rho:float):
+        return self.__saturation_curve_interpolator(val_rho)
+    
     def GetFDStepSizes(self):
         return self.__fd_step_size_rho, self.__fd_step_size_e
 
