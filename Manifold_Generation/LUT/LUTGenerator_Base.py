@@ -31,6 +31,9 @@ from copy import copy
 from sklearn.preprocessing import MinMaxScaler
 from multiprocessing import Pool
 from scipy.interpolate import RBFInterpolator
+from scipy.spatial import Delaunay
+import matplotlib.pyplot as plt
+import matplotlib.tri as mtri
 
 from Common.Interpolators import fluidDataInterpolator
 from Common.DataDrivenConfig import Config
@@ -65,6 +68,7 @@ class SU2TableGenerator_Base:
     __N_nearest_neighbors:int = None
     __inverse_distance_exponent:float = None
 
+    _table_cv_names:list[str] = None   # Controlling variables spanning the table, ordered as [plane, plane, level].
     _N_table_levels:int = None
     _table_levels:np.ndarray[float] = []
     _tableUpperLevel:float = None
@@ -87,7 +91,8 @@ class SU2TableGenerator_Base:
         :type config_in: Config
         """
         self._Config = copy(config_in)
-        self._nDim_table = len(self._Config.GetControllingVariables())
+        self.setTableAxes(self._Config.GetControllingVariables()[:2], \
+                          self._Config.GetControllingVariables()[2] if len(self._Config.GetControllingVariables()) > 2 else None)
         return
     
     def generateTable(self):
@@ -134,7 +139,7 @@ class SU2TableGenerator_Base:
         """Prepare the interpolation function for evaluating thermochemical states on the table nodes and scale the controlling variables in the state space.
         """
         stateDataFrame = self._getFluidDataForInterpolator()
-        cv_data = np.column_stack(tuple(stateDataFrame[cv] for cv in self._Config.GetControllingVariables()))
+        cv_data = np.column_stack(tuple(stateDataFrame[cv] for cv in self._table_cv_names))
         cv_data_scaled = self._scaler_controlling_variables.fit_transform(cv_data)
         self._fluid_data_interpolator = fluidDataInterpolator(cv_data_scaled, stateDataFrame, self.__N_nearest_neighbors, self.__inverse_distance_exponent)
         return
@@ -183,6 +188,42 @@ class SU2TableGenerator_Base:
         self.__printmsg("Done")
         return
     
+    def setTableAxes(self, plane_cv_names:list[str], level_cv_name:str=None):
+        """Select which controlling variables span the table. The two plane controlling variables are the
+        coordinates of the mesh generated for each table level, the level controlling variable sweeps across
+        table levels. Omitting the level controlling variable yields a single, two-dimensional table, even when
+        the manifold is described by more controlling variables; the remaining controlling variables are then
+        interpolated onto the table as ordinary state variables.
+
+        By default the table is spanned by the controlling variables of the configuration in their own order.
+
+        :param plane_cv_names: the two controlling variables spanning each table level.
+        :type plane_cv_names: list[str]
+        :param level_cv_name: controlling variable sweeping across table levels, defaults to None
+        :type level_cv_name: str, optional
+        :raises Exception: if other than two plane controlling variables are specified.
+        :raises Exception: if a specified name is not a controlling variable of the configuration.
+        :raises Exception: if a controlling variable is used for more than one table axis.
+        """
+        controlling_variables = self._Config.GetControllingVariables()
+
+        if len(plane_cv_names) != 2:
+            raise Exception("A table level is spanned by exactly two controlling variables.")
+
+        table_cv_names = list(plane_cv_names)
+        if level_cv_name is not None:
+            table_cv_names.append(level_cv_name)
+
+        for cv in table_cv_names:
+            if cv not in controlling_variables:
+                raise Exception("%s is not a controlling variable of the manifold (%s)" % (cv, ", ".join(controlling_variables)))
+        if len(set(table_cv_names)) != len(table_cv_names):
+            raise Exception("Each table axis should be spanned by a different controlling variable.")
+
+        self._table_cv_names = table_cv_names
+        self._nDim_table = len(table_cv_names)
+        return
+
     def setMaximumCellSize(self, cell_size_coarse:float=1e-2):
         """Specify the coarse level cell size of the table
 
@@ -260,6 +301,10 @@ class SU2TableGenerator_Base:
 
         mesher.setInitialPointCloud(pointCloud)
 
+        boundaryPolyline = self._createBoundaryPolylineForTableLevel(self._table_levels[level_index])
+        if boundaryPolyline is not None:
+            mesher.setBoundaryPolyline(boundaryPolyline)
+
         self._passRefinementOptions(mesher)
 
         mesher.generateMesh()
@@ -268,7 +313,7 @@ class SU2TableGenerator_Base:
         
         if self._is3D():
             self.__printmsg("Finished meshing table level %i at %s=%.2e with %i nodes" % (level_index, \
-                                                                                    self._Config.GetControllingVariables()[2], \
+                                                                                    self._table_cv_names[2], \
                                                                                     self._table_levels[level_index], \
                                                                                     len(cvTable)))
 
@@ -281,7 +326,18 @@ class SU2TableGenerator_Base:
         :type levelValue: float
         """
         return
-    
+
+    def _createBoundaryPolylineForTableLevel(self, levelValue:float):
+        """Generate an ordered, closed polyline describing the perimiter of the table level. Returning None
+        leaves the perimiter to be extracted as a hull around the reference point cloud.
+
+        :param levelValue: value of the third table dimension corresponding to the table level.
+        :type levelValue: float
+        :return: planar coordinates of the perimiter, or None.
+        :rtype: np.ndarray[float]
+        """
+        return None
+
     def _initiateMesher(self):
         return Mesh2DPlane()
     
@@ -318,7 +374,7 @@ class SU2TableGenerator_Base:
 
 
         cvTable = self._scaler_controlling_variables.inverse_transform(cvTable_scaled)
-        for iCv, cv in enumerate(self._Config.GetControllingVariables()):
+        for iCv, cv in enumerate(self._table_cv_names):
             tableDataFrame[cv] = cvTable[:, iCv]
         
         return cvTable, triangles, hullIDs, tableDataFrame
@@ -423,6 +479,214 @@ class SU2TableGenerator_Base:
 
         return
     
+    def visualizeTableLevel(self, level_index:int=0, var_to_plot:str=None, plot_3d:bool=False, \
+                            show_grid:bool=True, save_path:str=None, show:bool=False):
+        """Visualize the mesh of a single table level and optionally colour it with a table variable.
+
+        When the table data have not been generated yet, the requested level is meshed on the fly,
+        which allows the mesh quality and refinement settings to be inspected before committing to
+        the full table.
+
+        :param level_index: index of the table level to visualize, defaults to 0
+        :type level_index: int, optional
+        :param var_to_plot: name of the table variable to colour the plot with. Showing the mesh alone
+            is the default.
+        :type var_to_plot: str, optional
+        :param plot_3d: render the variable as a 3D surface rather than a 2D colour map, defaults to False
+        :type plot_3d: bool, optional
+        :param show_grid: overlay the triangulation on the plot, defaults to True
+        :type show_grid: bool, optional
+        :param save_path: file path to save the figure to, defaults to None
+        :type save_path: str, optional
+        :param show: keep the figure open for display, defaults to False
+        :type show: bool, optional
+        :raises Exception: if the table level index is out of range.
+        :raises Exception: if the variable to plot is not part of the table data.
+        """
+        # The index is checked against the levels that are known, so that meshing is not
+        # started for a level that does not exist.
+        if self._N_table_levels is not None:
+            self._checkTableLevelIndex(level_index)
+
+        table_is_generated = (level_index < len(self._data_in_table)) and (self._data_in_table[level_index] is not None)
+        if not table_is_generated:
+            self._processTableLevels()
+            if self._fluid_data_interpolator is None:
+                self._defineFluidDataInterpolator()
+            self._checkTableLevelIndex(level_index)
+
+        if table_is_generated:
+            table_nodes = self._table_nodes[level_index]
+            connectivity = self._table_connectivity[level_index]
+            hull_nodes = self._table_hullnodes[level_index]
+            data_level = self._data_in_table[level_index]
+        else:
+            table_nodes, connectivity, hull_nodes, data_level = self.meshTableLevel(level_index)
+
+        if var_to_plot is not None and var_to_plot not in data_level:
+            raise Exception("%s is not part of the table data (%s)" % (var_to_plot, ", ".join(list(data_level.keys()))))
+
+        x_nodes = table_nodes[:, 0]
+        y_nodes = table_nodes[:, 1]
+        if self._is3D():
+            title = "%s = %.4e" % (self._table_cv_names[2], self._table_levels[level_index])
+        else:
+            title = "Table level %i" % level_index
+
+        if var_to_plot is None:
+            fig, ax = plt.subplots(figsize=(10, 10))
+            ax.triplot(x_nodes, y_nodes, connectivity, linewidth=0.5)
+            ax.plot(x_nodes[hull_nodes], y_nodes[hull_nodes], 'ko', ms=3, label="Perimiter nodes")
+            ax.set_xlabel(self._table_cv_names[0], fontsize=14)
+            ax.set_ylabel(self._table_cv_names[1], fontsize=14)
+            ax.set_title(title, fontsize=14)
+            ax.legend(fontsize=12)
+        elif plot_3d:
+            fig = plt.figure(figsize=(10, 10))
+            ax = fig.add_subplot(111, projection='3d')
+            ax.plot_trisurf(x_nodes, y_nodes, data_level[var_to_plot].to_numpy(dtype=float), \
+                            triangles=connectivity, cmap='viridis', alpha=0.9, \
+                            edgecolor='k' if show_grid else 'none', \
+                            linewidth=0.2 if show_grid else 0)
+            ax.set_xlabel(self._table_cv_names[0], fontsize=14)
+            ax.set_ylabel(self._table_cv_names[1], fontsize=14)
+            ax.set_zlabel(var_to_plot, fontsize=14)
+            ax.set_title(title, fontsize=14)
+        else:
+            triangulation = mtri.Triangulation(x_nodes, y_nodes, connectivity)
+            fig, ax = plt.subplots(figsize=(10, 7), constrained_layout=True)
+            colormesh = ax.tripcolor(triangulation, data_level[var_to_plot].to_numpy(dtype=float), \
+                                     shading='gouraud', cmap='inferno')
+            if show_grid:
+                ax.triplot(triangulation, color='k', linewidth=0.2, alpha=0.4)
+            colorbar = fig.colorbar(colormesh, ax=ax, pad=0.02)
+            colorbar.set_label(var_to_plot, fontsize=12)
+            ax.set_xlabel(self._table_cv_names[0], fontsize=14)
+            ax.set_ylabel(self._table_cv_names[1], fontsize=14)
+            ax.set_title("%s at %s" % (var_to_plot, title), fontsize=14)
+
+        self._saveOrCloseFigure(fig, save_path, show)
+        return
+
+    def plotTableSlices(self, x_cv:str, y_var:str, slice_cv:str, slice_range:tuple=None, n_slices:int=10, \
+                        n_x_points:int=200, level_value:float=None, save_path:str=None, show:bool=False):
+        """Plot a fluid state variable against one controlling variable for a number of fixed values of
+        another controlling variable, evaluated with the fluid data interpolator. Such plots reveal
+        whether the interpolated manifold is smooth and free of jumps before the table is written.
+
+        :param x_cv: controlling variable along the horizontal axis.
+        :type x_cv: str
+        :param y_var: state variable along the vertical axis.
+        :type y_var: str
+        :param slice_cv: controlling variable kept constant along each line.
+        :type slice_cv: str
+        :param slice_range: lower and upper value of the slice controlling variable, defaults to its data extent
+        :type slice_range: tuple, optional
+        :param n_slices: number of slices distributed over the slice range, defaults to 10
+        :type n_slices: int, optional
+        :param n_x_points: number of sample points along each line, defaults to 200
+        :type n_x_points: int, optional
+        :param level_value: value of the remaining controlling variable of a three-dimensional table,
+            defaults to the centre of its data range
+        :type level_value: float, optional
+        :param save_path: file path to save the figure to, defaults to None
+        :type save_path: str, optional
+        :param show: keep the figure open for display, defaults to False
+        :type show: bool, optional
+        :raises Exception: if the horizontal or slice variable does not span the table.
+        :raises Exception: if the state variable is not available in the fluid data.
+        """
+        for cv in (x_cv, slice_cv):
+            if cv not in self._table_cv_names:
+                raise Exception("%s does not span the table (%s)" % (cv, ", ".join(self._table_cv_names)))
+        if x_cv == slice_cv:
+            raise Exception("The horizontal and slice controlling variable should be different.")
+
+        if self._fluid_data_interpolator is None:
+            self._defineFluidDataInterpolator()
+        if y_var not in self._state_quantities:
+            raise Exception("%s is not available in the fluid data" % y_var)
+
+        x_index = self._table_cv_names.index(x_cv)
+        slice_index = self._table_cv_names.index(slice_cv)
+        y_index = self._state_quantities.index(y_var)
+
+        # The scaler was fitted on the controlling variable data, so it carries their extent.
+        cv_min = self._scaler_controlling_variables.data_min_
+        cv_max = self._scaler_controlling_variables.data_max_
+
+        if slice_range is None:
+            slice_min, slice_max = cv_min[slice_index], cv_max[slice_index]
+        else:
+            slice_min, slice_max = float(slice_range[0]), float(slice_range[1])
+
+        x_values = np.linspace(cv_min[x_index], cv_max[x_index], n_x_points)
+        slice_values = np.linspace(slice_min, slice_max, n_slices)
+
+        # Query points of a three-dimensional table are taken at a single value of the third
+        # controlling variable, which is the one that is neither plotted nor sliced.
+        cv_query = np.zeros([n_x_points, self._nDim_table])
+        if self._is3D():
+            third_index = ({0, 1, 2} - {x_index, slice_index}).pop()
+            if level_value is None:
+                level_value = 0.5 * (cv_min[third_index] + cv_max[third_index])
+            cv_query[:, third_index] = level_value
+        cv_query[:, x_index] = x_values
+
+        # Query points outside the data support are blanked rather than extrapolated.
+        cv_pointcloud_scaled = self._fluid_data_interpolator.getControllingVariableNodes()
+        data_support = Delaunay(cv_pointcloud_scaled[:, [x_index, slice_index]])
+
+        colormap = plt.cm.coolwarm
+        color_norm = plt.Normalize(vmin=slice_min, vmax=slice_max)
+        fig, ax = plt.subplots(figsize=(9, 5), constrained_layout=True)
+
+        for slice_value in slice_values:
+            cv_query[:, slice_index] = slice_value
+            cv_query_scaled = self._scaler_controlling_variables.transform(cv_query)
+
+            within_support = data_support.find_simplex(cv_query_scaled[:, [x_index, slice_index]]) >= 0
+            if not np.any(within_support):
+                continue
+
+            y_values = self._fluid_data_interpolator(cv_query_scaled)[:, y_index]
+            y_values[~within_support] = np.nan
+
+            ax.plot(x_values, y_values, color=colormap(color_norm(slice_value)), linewidth=1.2)
+
+        scalar_map = plt.cm.ScalarMappable(cmap=colormap, norm=color_norm)
+        scalar_map.set_array([])
+        colorbar = fig.colorbar(scalar_map, ax=ax, pad=0.02)
+        colorbar.set_label(slice_cv, fontsize=11)
+
+        ax.set_xlabel(x_cv, fontsize=12)
+        ax.set_ylabel(y_var, fontsize=12)
+        ax.set_title("%s(%s) for %i slices of %s" % (y_var, x_cv, n_slices, slice_cv), fontsize=13)
+        ax.grid(True, linestyle='--', alpha=0.4)
+
+        self._saveOrCloseFigure(fig, save_path, show)
+        return
+
+    def _checkTableLevelIndex(self, level_index:int):
+        """Verify that a table level index addresses an existing table level.
+
+        :param level_index: table level index.
+        :type level_index: int
+        :raises Exception: if the index is out of range.
+        """
+        if (level_index < 0) or (level_index >= self._N_table_levels):
+            raise Exception("Table level index should be between 0 and %i." % (self._N_table_levels - 1))
+        return
+
+    def _saveOrCloseFigure(self, fig, save_path:str, show:bool):
+        """Save a figure when a file path is provided and close it unless it is to be displayed."""
+        if save_path:
+            fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            self.__printmsg("Saved figure %s" % save_path)
+        if not show:
+            plt.close(fig)
+        return
+
     def _writeAdditionalInfoToTable(self, fid):
         return
     
@@ -528,6 +792,15 @@ class SU2TableGenerator_Base:
             self._table_levels = level_values
         return
     
+    def getTableLevels(self):
+        """Values of the level controlling variable of each table level. The values are prepared when the
+        table is generated, so an empty array is returned before then.
+
+        :return: table level values.
+        :rtype: np.ndarray[float]
+        """
+        return np.asarray(self._table_levels, dtype=float)
+
     def setTableLimits(self, lower_limit:float, upper_limit:float):
         """Specify the upper and lower limit of the third table dimension.
 

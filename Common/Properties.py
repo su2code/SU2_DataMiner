@@ -218,6 +218,25 @@ class DefaultSettings_FGM(DefaultProperties):
     include_equilibrium:bool = True
     include_counterflames:bool = False
 
+    counterflow_fixed_strain:bool = False   # False = default strain-rate sweep; True = fixed global strain rate
+    counterflow_strain_rate:float = 56.0    # global strain rate [1/s] used when counterflow_fixed_strain is True
+
+    save_mole_fractions:bool = False  # Save mole fractions (X-species) in flamelet CSV output
+    restart_from_existing_flamelets:bool = False  # Skip re-solving flamelet points whose output CSV already exists on disk
+
+    # Table generation: reference point cloud spanning a table level.
+    table_pointcloud_resolution:int = 400    # Nodes per direction in the uniform reference lattice of a table level.
+    table_reactant_pv_margin:float = 1e-2    # Lattice extension beyond the reactant state, as a fraction of the progress variable range.
+
+    # Table generation: data-driven boundary of a table level.
+    table_boundary_bins:int = 100               # Number of bins along the progress variable used to extract the data envelope.
+    table_boundary_transverse_bins:int = 40     # Number of bins along the enthalpy used to extract the equilibrium boundary at maximum progress variable.
+    table_boundary_min_points_per_bin:int = 5   # Bins holding fewer flamelet data points are discarded as unrepresentative of the boundary.
+    table_boundary_smoothing_window:int = 3     # Number of bins over which the envelope is smoothed. A window of three bins is the smallest that encloses all flamelet data.
+    table_boundary_level_bandwidth:float = 0.5  # Table level spacings around a level from which flamelet data is drawn to build the envelope.
+    table_boundary_simplification_tolerance:float = 1.0  # Envelope simplification tolerance, as a fraction of the coarse cell size. Collapses the steps left by the discrete spacing between flamelets.
+    table_boundary_merge_tolerance:float = 1e-3 # Distance below which consecutive perimiter points are merged, as a fraction of the coarse cell size.
+
     affinity_threshold:float = 0.7
     output_file_header:str = "flamelet_data"
     boundary_file_header:str = "boundary_data"

@@ -13,6 +13,7 @@ class Mesh2DPlane:
     __pointCloud:np.ndarray[float] = None
     _pointCloud_hullNodes:np.ndarray[float] = None
     __mesh_along_coords:list[int] = [0, 1]
+    __boundary_polyline:np.ndarray[float] = None
 
     _gmsh_geo:gmsh.model.geo = None
     _gmsh_mesher:gmsh.model.mesh = None
@@ -100,11 +101,14 @@ class Mesh2DPlane:
         hullTags = self.__extractHulltags()
         return meshNodeCoords, triaTags, hullTags
     
-    def __checkPlanarCoords(self):
+    def __constantCoordIndex(self):
         all_dims = [0, 1, 2]
         for iDim in self.__mesh_along_coords:
             all_dims.remove(iDim)
-        const_dim = all_dims[0]
+        return all_dims[0]
+
+    def __checkPlanarCoords(self):
+        const_dim = self.__constantCoordIndex()
         equal_Z_coords = np.all(self.__pointCloud[:, const_dim]==self.__pointCloud[0, const_dim])
         if not equal_Z_coords:
             raise Exception("Point cloud does not contain planar coordinates")
@@ -118,7 +122,10 @@ class Mesh2DPlane:
     
 
     def __findHullNodes(self):
-        
+
+        if self.__boundary_polyline is not None:
+            return self.__hullNodesFromBoundaryPolyline()
+
         planarCoords_PointCloud = self.__pointCloud[:, self.__mesh_along_coords]
         hullIndices = concave_hull_indexes(planarCoords_PointCloud, length_threshold=self._base_cell_size)
 
@@ -126,7 +133,43 @@ class Mesh2DPlane:
         self.__plane_area = shoelace(planarCoords_hull)
 
         return self.__pointCloud[hullIndices]
-    
+
+    def __hullNodesFromBoundaryPolyline(self):
+        """Use the externally provided boundary polyline as the plane perimiter.
+
+        The polyline describes the perimiter directly, so no hull is extracted from the point cloud. This
+        avoids tracing the perimiter along a discrete point cloud, which yields a stair-cased boundary
+        whenever the perimiter is not aligned with the point cloud spacing.
+        """
+        planarCoords_hull = self.__boundary_polyline
+        self.__plane_area = shoelace(planarCoords_hull)
+
+        const_dim = self.__constantCoordIndex()
+        hull_coords = np.zeros([len(planarCoords_hull), np.shape(self.__pointCloud)[1]])
+        hull_coords[:, self.__mesh_along_coords] = planarCoords_hull
+        hull_coords[:, const_dim] = self.__pointCloud[0, const_dim]
+
+        return hull_coords
+
+    def setBoundaryPolyline(self, boundary_coords_2D:np.ndarray[float]):
+        """Provide an ordered, closed polyline describing the perimiter of the 2D plane. When provided, the
+        perimiter is taken from this polyline instead of being extracted as a hull around the point cloud.
+
+        :param boundary_coords_2D: planar coordinates of the perimiter, ordered along the perimiter. The
+            closing segment between the last and first point is added automatically.
+        :type boundary_coords_2D: np.ndarray[float]
+        :raises Exception: if the polyline is not a two-column array.
+        :raises Exception: if the polyline describes fewer than three points.
+        """
+        polyline = np.asarray(boundary_coords_2D, dtype=float)
+        if polyline.ndim != 2 or np.shape(polyline)[1] != len(self.__mesh_along_coords):
+            raise Exception("Boundary polyline should be provided as an array with %i columns" % len(self.__mesh_along_coords))
+        if len(polyline) < 3:
+            raise Exception("Boundary polyline should describe at least three points")
+        self.__boundary_polyline = polyline
+        return
+
+
     def __createHullCurvLoop(self, hull_coords:np.ndarray[float]):
 
         hull_pts = self.__createHullPointEntities(hull_coords)
