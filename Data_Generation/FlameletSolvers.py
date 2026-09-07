@@ -800,6 +800,18 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         self._flameletSolution = ct.BurnerFlame(self._canteraSolution, self._initial_grid)
 
         return
+
+    def setTargetEnthalpySpacing(self, val_delta_enth:float):
+        """Specify the change in total enthalpy between adjacent flamelet solutions targeted by the solver.
+
+        :param val_delta_enth: target value for the total enthalpy offset evalauted at the inflow boundary in Joules per kilo gram.
+        :type val_delta_enth: float
+        :raises Exception: if the specified value is equal to zero.
+        """
+        if val_delta_enth == 0:
+            raise Exception("Enthalpy difference between adjacent flamelets should be higher than zero.")
+        self.__delta_enth = abs(val_delta_enth)
+        return 
     
     def retrieveSolverSettings(self, solvers:Dict[str, FlameletSolver_Cantera]):
         """Retrieve adiabatic mass flow rate from the adiabatic flamelet solver.

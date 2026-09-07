@@ -48,8 +48,12 @@ The first option is to vary the mass flux for a specified number of samples line
 The number of samples is retrieved from the :ref:`SU2 DataMiner configuration <FGM>` using the :code:`GetNpMdot` function. 
 
 The second option is to specified the **change in total enthalpy at the inflow boundary** between adjacent burner-stabilized flamelet solutions. 
-This option is enabled by specifying the enthalpy change in the configuration with :ref:`this function <enable_enth_delta_burnerflames>`.
+This option is enabled by specifying the enthalpy change in the :code:`BurnerFlameSolver` with 
 
+.. autofunction:: Data_Generation.FlameletSolvers.BurnerFlameSolver.setTargetEnthalpySpacing
+
+
+or in the configuration with :ref:`this function <enable_enth_delta_burnerflames>`.
 The mass flux imposed at the inflow boundary of the next flamelet :math:`\dot{m}_{i+1}` is calculated with 
 
 .. math::

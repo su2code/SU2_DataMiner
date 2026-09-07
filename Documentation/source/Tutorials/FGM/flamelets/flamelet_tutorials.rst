@@ -7,5 +7,6 @@ Tutorials for Flamelet Simulations
 
 .. toctree::
     freeflame.rst 
+    burnerflame.rst
     :maxdepth: 1
 
