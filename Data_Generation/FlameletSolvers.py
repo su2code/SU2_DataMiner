@@ -134,7 +134,7 @@ class FlameletSolver_Cantera:
                 self.saveFlameletSolution()
             if not self._keep_iterating:
                 break
-        return 
+        return
     
     def saveFlameletSolution(self):
         """Store flamelet solution in appropriately named folder.
@@ -785,7 +785,7 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
 
     def setAdiabaticMassFlow(self, val_ad_massflow:float):
         self.__adiabatic_massflow = val_ad_massflow
-        return 
+        return
     
     def getReactantMassFlow(self):
         return self.__val_massflow
@@ -811,7 +811,7 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         if val_delta_enth == 0:
             raise Exception("Enthalpy difference between adjacent flamelets should be higher than zero.")
         self.__delta_enth = abs(val_delta_enth)
-        return 
+        return
     
     def retrieveSolverSettings(self, solvers:Dict[str, FlameletSolver_Cantera]):
         """Retrieve adiabatic mass flow rate from the adiabatic flamelet solver.
@@ -862,7 +862,7 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
                 i += 1
         else:
             super()._iterateFlamelets(vals_input_settings, save)
-        return 
+        return
     
     def _postProcessResults(self):
         super()._postProcessResults()
@@ -884,7 +884,7 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         self.__val_massflow_enthalpy -= self.__delta_massflow
         self._keep_iterating = (self.__val_massflow_enthalpy > 0.001*self.__adiabatic_massflow)
         
-        return 
+        return
     
     def setInputVariable(self, val_input:float):
         self.setReactantMassFlow(val_input)
