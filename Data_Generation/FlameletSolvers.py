@@ -845,7 +845,6 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         mdot_max = 0.98 * self.__adiabatic_massflow
         mdot_min = 0.001 * self.__adiabatic_massflow
         if self.__iterate_enthalpy():
-            #self._n_1D_iterations = 10
             self.__delta_massflow = (mdot_max - mdot_min)/self._n_1D_iterations
             self.__val_massflow_enthalpy = mdot_max
         m_dot_range = np.linspace(mdot_max, mdot_min, self._n_1D_iterations+1)[:-1]
