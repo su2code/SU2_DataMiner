@@ -427,6 +427,11 @@ class FlameletSolver_Cantera:
         quantities other solvers query afterwards. Called both for a computed
         solution and for one restored from a solution file, so that a restarted
         sweep follows the same trajectory as an uninterrupted one.
+
+        Also called after a flamelet that did not converge, so that one failure
+        does not stall the sweep. There is no solution to read in that case:
+        isConverged() gates anything derived from the solution data, which still
+        holds the previous flamelet, or nothing at all on the first point.
         """
         return
     
@@ -638,9 +643,11 @@ class FlameletSolver_Cantera:
         try:
             # Restarting from a solution array avoids the ambiguous truth test
             # that a data frame runs into in some of the Cantera flame classes.
+            # Older Cantera versions cannot build one from a data frame, in which
+            # case the data frame is passed on as it is.
             restartData = ct.SolutionArray(self._canteraSolution)
             restartData.from_pandas(initialGuessData)
-        except:
+        except Exception:
             restartData = initialGuessData
 
         try:
@@ -838,6 +845,12 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         return
     
     def retrieveSolverSettings(self, solvers:Dict[str, FlameletSolver_Cantera]):
+        """Anchor the mass flux range of this sweep on the adiabatic flame of the same mixture.
+
+        A mixture too lean or too rich to sustain an adiabatic flame yields no mass flux to anchor
+        on. That is a property of the mixture rather than an error, so it leaves the mass flux
+        unset and the sweep is skipped in _prepareSettingRange.
+        """
         if "FREEFLAME" in solvers.keys():
             freeflame_solver:FreeFlameSolver = solvers["FREEFLAME"]
             self.__adiabatic_massflow = freeflame_solver.getMassFlowRate()
@@ -849,11 +862,19 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
             if freeflame_solver.isBurning() and freeflame_solver.isConverged():
                 self.__adiabatic_massflow = freeflame_solver.getMassFlowRate()
             else:
-                raise Exception("Unable to calculate adiabatic mass flow rate")
+                self.__adiabatic_massflow = 0.0
         return
     
     def _prepareSettingRange(self):
         super()._prepareSettingRange()
+
+        # Without an adiabatic flame to anchor on, every mass flux of the sweep would be zero. The
+        # sweep is skipped so that the remaining flamelet types, and the remaining mixtures, carry on.
+        if not self.__adiabatic_massflow:
+            print("No adiabatic flame at mixture status %.4f, skipping burner-stabilized flames" \
+                  % self._reactant_mixture_status)
+            return []
+
         mdot_max = 0.98 * self.__adiabatic_massflow
         mdot_min = 0.001 * self.__adiabatic_massflow
         if self.__iterate_enthalpy():
@@ -864,7 +885,13 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         return m_dot_range
     
     def _updateStateFromSolution(self):
-        if self.__iterate_enthalpy():
+        if not self.__iterate_enthalpy():
+            return
+
+        # The mass flux step is adapted towards a target enthalpy step, which needs the enthalpy of
+        # the solution just obtained. A flamelet that did not converge leaves the previous solution
+        # in place, so the step is left as it is rather than adapted against a stale enthalpy.
+        if self.isConverged() and (self._thermochemical_solution is not None):
             enth_current = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
             if self.__enth_prev is not None:
                 delta_enth = abs(enth_current - self.__enth_prev)
@@ -872,8 +899,10 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
                 self.__delta_massflow *= scale_mdot
 
             self.__enth_prev = enth_current
-            self.__val_massflow_enthalpy -= self.__delta_massflow
-            self._keep_iterating = (self.__val_massflow_enthalpy > 0.001*self.__adiabatic_massflow)
+
+        # The sweep advances either way: a flamelet that fails to converge should not stall it.
+        self.__val_massflow_enthalpy -= self.__delta_massflow
+        self._keep_iterating = (self.__val_massflow_enthalpy > 0.001*self.__adiabatic_massflow)
         return
     
     def __iterate_enthalpy(self):
@@ -1187,6 +1216,14 @@ class CooledFlameInterpolator(FlameletSolver_Cantera):
     
     def _prepareSettingRange(self):
         super()._prepareSettingRange()
+
+        # There is nothing to interpolate from when the mixture produced no burner-stabilized flame,
+        # which is the case for a mixture that sustains no adiabatic flame to anchor that sweep on.
+        if (self.__burnerFlameSolution is None) or (self.__equilibriumSolution is None):
+            print("No burner-stabilized flame at mixture status %.4f, skipping interpolated flames" \
+                  % self._reactant_mixture_status)
+            return []
+
         iter_values = [i for i in range(self._n_1D_iterations)]
         return iter_values
     
@@ -1242,6 +1279,9 @@ class CooledFlameInterpolator(FlameletSolver_Cantera):
         return flamelet_filename
     
     def retrieveSolverSettings(self, solvers:Dict[str, FlameletSolver_Cantera]):
+        """Take the two states this solver interpolates between: the coldest burner-stabilized flame
+        of the mixture, and its equilibrium products.
+        """
         burnerflameSolver = solvers["BURNERFLAME"]
         equilibriumSolver = solvers["EQUILIBRIUM"]
         self.setBurnerFlameData(burnerflameSolver.getThermoChemicalData())
@@ -1301,7 +1341,7 @@ class CounterFlowDiffusionFlameSolver(FlameletSolver_Cantera):
         self._n_1D_iterations = self._Config.GetNpTemp()
         self.setInitialGrid(2e-1, 300)
         self.setGridRefinementCriteria(ratio=3, slope=0.04, curve=0.06, prune=0.02)
-        if self._Config.GetCounterFlowFixedStrain():
+        if self._Config.GetCounterFlowStrainRate() is not None:
             self.setStrainRate(self._Config.GetCounterFlowStrainRate())
         return
     

@@ -437,10 +437,13 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
         If None, the DataGenerator_Cantera defaults are used.
     :type counter_flame_refine: dict, optional
     :raises Exception: If number of processors is set to zero when running in parallel.
+    :raises Exception: If no flamelet type is included in the manifold.
     """
 
     if run_parallel and (N_processors == 0):
         raise Exception("Number of processors should be higher than zero when running in parallel.")
+
+    Config.checkFlameletTypesSelected()
 
     mix_bounds = Config.GetMixtureBounds()
     Np_unb_mix = Config.GetNpMix()

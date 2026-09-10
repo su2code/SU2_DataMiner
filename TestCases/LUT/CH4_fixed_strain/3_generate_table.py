@@ -35,13 +35,11 @@ Tgen.setTableAxes(["MixtureFraction", "EnthalpyTot"])
 # Coarse cell size in the scaled table plane.
 Tgen.setMaximumCellSize(5e-3)
 
-# Bins along the mixture fraction used to extract the envelope bounding the table.
-# The flamelets run diagonally across this plane, so within a bin the enthalpy of
-# the boundary varies over the bin width; the envelope is placed at the extreme
-# within each bin and is therefore biased outward by roughly half of that
-# variation. More bins shrink the bias (100 bins: +3.9% enclosed area, 200: +1.9%,
-# 400: +0.9%) at the cost of more boundary vertices.
-Tgen.setBoundaryBinCount(200)
+# The default number of bins along the mixture fraction extracts the envelope. Each bin
+# contributes the extreme data point it holds, so the envelope follows the flamelet data
+# rather than the bins and the count only decides how finely the boundary is sampled.
+# Raise it to follow the data in more detail, but keep enough data in every bin for its
+# extreme to be representative of the boundary.
 
 # Refine towards the reaction zone, which in this plane is a thin diagonal band.
 Tgen.applyRefinementForGradientOf("Heat_Release", coef=0.3)

@@ -39,6 +39,26 @@ def main():
     test_list_NICFD.append(tabulation_NICFD)
 
 
+    tabulation_FGM_fixedstrain = TestCase("Tabulation FGM non-premixed")
+    tabulation_FGM_fixedstrain.config_dir = "TableGeneration/FGM_FixedStrain/"
+    tabulation_FGM_fixedstrain.config_file = ""
+    tabulation_FGM_fixedstrain.exec_command = "./fixed_strain_lut.py"
+    tabulation_FGM_fixedstrain.reference_files = ["LUT_test.ref", "LUT_summary.ref"]
+    tabulation_FGM_fixedstrain.test_files = ["LUT_test.drg", "LUT_summary.csv"]
+    tabulation_FGM_fixedstrain.timeout = 300
+    tabulation_FGM_fixedstrain.tolerance = 1e-3
+    test_list_FGM.append(tabulation_FGM_fixedstrain)
+
+    tabulation_FGM_premixed = TestCase("Tabulation FGM premixed")
+    tabulation_FGM_premixed.config_dir = "TableGeneration/FGM_Premixed/"
+    tabulation_FGM_premixed.config_file = ""
+    tabulation_FGM_premixed.exec_command = "./premixed_lut.py"
+    tabulation_FGM_premixed.reference_files = ["LUT_test.ref", "LUT_summary.ref"]
+    tabulation_FGM_premixed.test_files = ["LUT_test.drg", "LUT_summary.csv"]
+    tabulation_FGM_premixed.timeout = 300
+    tabulation_FGM_premixed.tolerance = 1e-3
+    test_list_FGM.append(tabulation_FGM_premixed)
+
     consistency_NICFD_PINN = TestCase("PIML training NICFD")
     consistency_NICFD_PINN.config_dir = "FluidTraining/MM_PINN/"
     consistency_NICFD_PINN.config_file = ""

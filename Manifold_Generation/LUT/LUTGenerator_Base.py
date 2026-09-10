@@ -59,7 +59,7 @@ class SU2TableGenerator_Base:
     _conditional_upper_bound:list[float] = []       # Upper bounds of conditional refinement quantities.
     _conditional_refinement_factor:list[float] = [] # Refinement factors to apply within the bounds
 
-    _scaler_controlling_variables:MinMaxScaler = MinMaxScaler()
+    _scaler_controlling_variables:MinMaxScaler = None
     _fluid_data_interpolator:fluidDataInterpolator = None
 
     __smoothTableData:bool = False
@@ -80,8 +80,6 @@ class SU2TableGenerator_Base:
 
     _state_quantities:list[str] = []
 
-    _planarMesher:Mesh2DPlane = Mesh2DPlane()
-
     _verbosity:int=1
 
     def __init__(self, config_in:Config):
@@ -91,6 +89,24 @@ class SU2TableGenerator_Base:
         :type config_in: Config
         """
         self._Config = copy(config_in)
+
+        # Attributes that are appended to, or that carry fitted state, are bound to the instance
+        # here. Left as class attributes they are shared by every generator in the process, so a
+        # second generator would inherit the settings of the first.
+        self._scaler_controlling_variables = MinMaxScaler()
+        self._table_vars = []
+        self._table_nodes = []
+        self._data_in_table = []
+        self._table_connectivity = []
+        self._table_hullnodes = []
+        self._conditional_refinement_vars = []
+        self._conditional_refinement_indices = []
+        self._conditional_lower_bound = []
+        self._conditional_upper_bound = []
+        self._conditional_refinement_factor = []
+        self._table_levels = []
+        self._table_level_inserts = []
+
         self.setTableAxes(self._Config.GetControllingVariables()[:2], \
                           self._Config.GetControllingVariables()[2] if len(self._Config.GetControllingVariables()) > 2 else None)
         return
@@ -182,8 +198,10 @@ class SU2TableGenerator_Base:
             data_on_table_level = self._data_in_table[iLevel].values
             smoothener = RBFInterpolator(cv_level_scaled[:, :2], data_on_table_level, kernel="linear",smoothing=self.__smoothingLevel,neighbors=100)
             smoothened_table_data = smoothener(cv_level_scaled[:, :2])
+            # The table axes hold the exact node coordinates and are never smoothed. Any other
+            # controlling variable is an interpolated table variable like the rest.
             for ivar, var in enumerate(list(self._data_in_table[iLevel].keys())):
-                if var not in self._Config.GetControllingVariables():
+                if var not in self._table_cv_names:
                     self._data_in_table[iLevel][var] = smoothened_table_data[:, ivar]
         self.__printmsg("Done")
         return
@@ -222,6 +240,10 @@ class SU2TableGenerator_Base:
 
         self._table_cv_names = table_cv_names
         self._nDim_table = len(table_cv_names)
+
+        # Table variables collected under the previous axes are re-ordered to the new ones.
+        if self._table_vars:
+            self._orderTableVarsByAxes()
         return
 
     def setMaximumCellSize(self, cell_size_coarse:float=1e-2):
@@ -413,6 +435,35 @@ class SU2TableGenerator_Base:
                         refinement_factor = min(refinement_factor, c)
         return refinement_factor
     
+    def _refinementFactorField(self, plane_nodes:np.ndarray[float]):
+        """Evaluate the refinement coefficient of every node at once.
+
+        Same quantity as _refinelocation, evaluated for a whole set of nodes rather than for one.
+        The mesher samples the refinement densely, and going through the interpolator one node at a
+        time costs far more in call overhead than in the lookup itself, so the field is evaluated in
+        one batch and handed to the mesher instead.
+
+        :param plane_nodes: table plane coordinates to evaluate, one node per row.
+        :type plane_nodes: np.ndarray[float]
+        :return: refinement coefficient of each node.
+        :rtype: np.ndarray[float]
+        """
+        refinement_factor = np.ones(len(plane_nodes))
+        if len(self._conditional_refinement_indices) == 0:
+            return refinement_factor
+
+        fluid_state_data = self._fluid_data_interpolator(plane_nodes[:, :self._nDim_table])
+        fluid_state_data = np.reshape(fluid_state_data, (len(plane_nodes), -1))
+
+        for ivar, lower, upper, coef in zip(self._conditional_refinement_indices, \
+                                            self._conditional_lower_bound, \
+                                            self._conditional_upper_bound, \
+                                            self._conditional_refinement_factor):
+            within_bounds = (fluid_state_data[:, ivar] >= lower) & (fluid_state_data[:, ivar] <= upper)
+            refinement_factor[within_bounds] = np.minimum(refinement_factor[within_bounds], coef)
+
+        return refinement_factor
+
     def setTableVars(self, table_vars_in:list[str]):
         """Specify the thermocehmical state variables in the table file.
 
@@ -420,6 +471,8 @@ class SU2TableGenerator_Base:
         :type table_vars_in: list[str]
         :raises Exception: if unsupported variables are included.
         """
+        # The manifold is defined in terms of all controlling variables, so all of them belong in the
+        # table whether or not they span it.
         controlling_variables = self._Config.GetControllingVariables()
         self._table_vars = []
         for cv in controlling_variables:
@@ -432,6 +485,17 @@ class SU2TableGenerator_Base:
                 self._table_vars.append(user_var)
             else:
                 raise Exception("%s is not supported for table output variables")
+
+        self._orderTableVarsByAxes()
+        return
+
+    def _orderTableVarsByAxes(self):
+        """Move the table axes to the front of the table variables. SU2 resolves them by name, so this
+        is not what makes the table readable, but it keeps the variable order of the table file aligned
+        with the coordinates its nodes are given in.
+        """
+        self._table_vars = self._table_cv_names + \
+                           [var for var in self._table_vars if var not in self._table_cv_names]
         return
     
     def _checkIfVariableIsValid(self, var_to_check:str):
@@ -695,6 +759,7 @@ class SU2TableGenerator_Base:
 
         :param filepath_out: file name header, defaults to None
         :type filepath_out: str, optional
+        :raises Exception: if a table axis is not among the table variables.
         """
         if filepath_out:
             file_out = filepath_out + ".drg"
@@ -703,6 +768,13 @@ class SU2TableGenerator_Base:
 
         self.__printmsg("Writing LUT file with name %s" % file_out)
 
+        # SU2 resolves the table axes by name against the variable names of the file, so a table
+        # spanned by anything other than the configuration controlling variables is only usable
+        # when those names are known. They are recorded here, and their absence is an error.
+        for cv in self._table_cv_names:
+            if cv not in self._table_vars:
+                raise Exception("Table axis %s is not among the table variables, the table file would be unusable" % cv)
+
         fid = open(file_out, "w+")
         fid.write("Dragon library\n\n")
         fid.write("<Header>\n\n")
@@ -710,7 +782,13 @@ class SU2TableGenerator_Base:
             fid.write("[Version]\n1.0.1\n\n")
         else:
             fid.write("[Version]\n1.1.0\n\n")
-        
+
+        # An unrecognized header tag is skipped by the SU2 table reader, so this is informative
+        # only: it names the controlling variables to select in the SU2 configuration.
+        fid.write("[Table axes]\n")
+        fid.write("\n".join(self._table_cv_names))
+        fid.write("\n\n")
+
         self._writeAdditionalInfoToTable(fid)
 
         if self._is3D():

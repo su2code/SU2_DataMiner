@@ -25,12 +25,16 @@
 import numpy as np
 import pandas as pd
 import os
+import glob
+from scipy.interpolate import PchipInterpolator
 from Common.Properties import EntropicVars,DefaultSettings_FGM
 from su2dataminer.generate_data import DataGenerator_CoolProp
 from Common.DataDrivenConfig import Config_NICFD,Config_FGM
+from Data_Generation.FlameletSolvers import FlameletSolverDict
 from Manifold_Generation.LUT.LUTGenerator_Base import SU2TableGenerator_Base
-from Manifold_Generation.LUT.MeshTools import MeshThermodynamicPlane
+from Manifold_Generation.LUT.MeshTools import MeshThermodynamicPlane, Mesh2DPlane
 import matplotlib.pyplot as plt
+import matplotlib.tri as mtri
 from matplotlib.collections import LineCollection
 class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
     _Config:Config_NICFD = None
@@ -56,6 +60,7 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         for var in EntropicVars:
             if var.name not in vars_to_exclude:
                 self._table_vars.append(var.name)
+        self._orderTableVarsByAxes()
         return
     
     def setTableVars(self, table_vars_in:list[str]):
@@ -172,17 +177,56 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
     __flamelet_data:pd.DataFrame = None
     __envelope_cache:dict = None
+    __reference_lattice:np.ndarray[float] = None
 
     __pointcloud_resolution:int = DefaultSettings_FGM.table_pointcloud_resolution
     __N_boundary_bins:int = DefaultSettings_FGM.table_boundary_bins
     __N_transverse_bins:int = DefaultSettings_FGM.table_boundary_transverse_bins
+    __min_points_per_bin:int = DefaultSettings_FGM.table_boundary_min_points_per_bin
+    __level_bandwidth:float = DefaultSettings_FGM.table_boundary_level_bandwidth
 
-    # A closed perimiter needs a lower and an upper envelope station on either side of at least one interior station.
-    __min_populated_bins:int = 3
+    # Controlling variable data of the flamelets, kept apart per flamelet type.
+    __flamelet_data_by_type:dict = None
+    __simplification_tolerance:float = DefaultSettings_FGM.table_boundary_simplification_tolerance
+    __merge_tolerance:float = DefaultSettings_FGM.table_boundary_merge_tolerance
+
+    # A branch needs a station at either end and at least one in between: fewer than that cannot describe
+    # a curve, so a sweep yielding fewer populated bins does not produce a branch, and a bin count below
+    # this cannot be configured.
+    __min_envelope_stations:int = 3
+
+    # A polygon is closed by three points, which is what the perimiter has to retain.
+    __min_perimiter_points:int = 3
+
+    # Below this a table level holds no plane to bound.
+    __min_flamelet_data_points:int = 3
+
+    # Inserting a station only changes the two segments meeting at it, so the outstanding violations
+    # shrink quickly; this bounds the work when a branch is pathological.
+    __max_enclosure_passes:int = 8
+
+    # Rounds of simplifying and re-enclosing a branch. The second round collapses what the first round
+    # had to insert; further rounds change little.
+    __branch_refinement_rounds:int = 2
+
+    # Rounds of raising or lowering the control points of a fitted edge onto the data.
+    __edge_fit_rounds:int = 3
+
+    # Points a fitted edge is sampled onto for the mesher.
+    __edge_sample_points:int = 40
+
+    # Enthalpy range around a corner, as a fraction of the plane, that the corner is taken from.
+    __corner_data_fraction:float = 0.02
 
     def __init__(self, config_in:Config_FGM):
         super().__init__(config_in)
+        # Bound to the instance rather than shared with every other generator in the process.
         self.__envelope_cache = {}
+        self.__reference_lattice = None
+        self.__flamelet_data_by_type = None
+        self._refine_for_gradients_of = []
+        self._gradient_refinement_factors = []
+        self._gradient_norm_factors = []
         self._getFluidDataForInterpolator()
         return
 
@@ -208,8 +252,8 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :type N_bins: int, optional
         :raises Exception: if fewer bins than the minimum required to close a perimiter are specified.
         """
-        if N_bins < self.__min_populated_bins:
-            raise Exception("Number of boundary bins should be at least %i." % self.__min_populated_bins)
+        if N_bins < self.__min_envelope_stations:
+            raise Exception("Number of boundary bins should be at least %i." % self.__min_envelope_stations)
         self.__N_boundary_bins = N_bins
         return
 
@@ -227,9 +271,69 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :type N_bins: int, optional
         :raises Exception: if fewer bins than the minimum required to close a perimiter are specified.
         """
-        if N_bins < self.__min_populated_bins:
-            raise Exception("Number of transverse boundary bins should be at least %i." % self.__min_populated_bins)
+        if N_bins < self.__min_envelope_stations:
+            raise Exception("Number of transverse boundary bins should be at least %i." % self.__min_envelope_stations)
         self.__N_transverse_bins = N_bins
+        return
+
+    def setBoundaryMinPointsPerBin(self, N_points:int=DefaultSettings_FGM.table_boundary_min_points_per_bin):
+        """Specify how many flamelet data points a bin should hold to contribute a station to the envelope.
+        Bins collecting only the tail of a single flamelet are not representative of the boundary, so raising
+        this discards more of them, at the cost of shortening the envelope where the data thins out.
+
+        :param N_points: minimum number of data points per bin, defaults to
+            DefaultSettings_FGM.table_boundary_min_points_per_bin
+        :type N_points: int, optional
+        :raises Exception: if fewer than one point per bin is specified.
+        """
+        if N_points < 1:
+            raise Exception("A bin should hold at least one data point to contribute an envelope station.")
+        self.__min_points_per_bin = N_points
+        return
+
+    def setBoundaryLevelBandwidth(self, bandwidth:float=DefaultSettings_FGM.table_boundary_level_bandwidth):
+        """Specify the band of flamelet data around a table level that shapes its envelope, in table level
+        spacings. Only three-dimensional tables draw on a band; a two-dimensional table is built from the
+        whole manifold. Widening the band draws in flamelets further from the level, which smooths the
+        envelope but blurs the variation of the boundary across levels.
+
+        :param bandwidth: half-width of the band in table level spacings, defaults to
+            DefaultSettings_FGM.table_boundary_level_bandwidth
+        :type bandwidth: float, optional
+        :raises Exception: if the bandwidth is not positive.
+        """
+        if bandwidth <= 0:
+            raise Exception("The table level bandwidth should be positive.")
+        self.__level_bandwidth = bandwidth
+        return
+
+    def setBoundarySimplificationTolerance(self, tolerance:float=DefaultSettings_FGM.table_boundary_simplification_tolerance):
+        """Specify how far the perimiter may depart from the envelope stations it replaces, as a fraction of
+        the coarse cell size. Simplification collapses the steps left by the discrete spacing between
+        flamelets into straight segments; a tolerance of zero retains every station.
+
+        :param tolerance: simplification tolerance as a fraction of the coarse cell size, defaults to
+            DefaultSettings_FGM.table_boundary_simplification_tolerance
+        :type tolerance: float, optional
+        :raises Exception: if the tolerance is negative.
+        """
+        if tolerance < 0:
+            raise Exception("The envelope simplification tolerance should not be negative.")
+        self.__simplification_tolerance = tolerance
+        return
+
+    def setBoundaryMergeTolerance(self, tolerance:float=DefaultSettings_FGM.table_boundary_merge_tolerance):
+        """Specify the distance below which consecutive perimiter points are merged, as a fraction of the
+        coarse cell size. Points closer together than this cannot span a mesh edge.
+
+        :param tolerance: merge tolerance as a fraction of the coarse cell size, defaults to
+            DefaultSettings_FGM.table_boundary_merge_tolerance
+        :type tolerance: float, optional
+        :raises Exception: if the tolerance is negative.
+        """
+        if tolerance < 0:
+            raise Exception("The perimiter merge tolerance should not be negative.")
+        self.__merge_tolerance = tolerance
         return
 
     def applyRefinementForGradientOf(self, varname:str, coef:float=0.5):
@@ -343,7 +447,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def visualizeTableLevelPerimiter(self, level_index:int=0, detail_fraction:float=0.05, \
-                                     save_path:str=None, show:bool=False):
+                                     color_by_flamelet_type:bool=False, save_path:str=None, show:bool=False):
         """Visualize the mesh of a table level and its perimiter against the flamelet data the perimiter
         was extracted from. Data outside the perimiter is data the table discards, while a perimiter
         enclosing no data marks a region the table extrapolates into.
@@ -355,6 +459,9 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :type level_index: int, optional
         :param detail_fraction: width of the detail view as a fraction of the table level, defaults to 0.05
         :type detail_fraction: float, optional
+        :param color_by_flamelet_type: color the flamelet data by the flamelet type it was produced by
+            rather than by whether the table covers it, defaults to False
+        :type color_by_flamelet_type: bool, optional
         :param save_path: file path to save the figure to, defaults to None
         :type save_path: str, optional
         :param show: keep the figure open for display, defaults to False
@@ -370,6 +477,15 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         level_nodes = self._table_nodes[level_index]
         level_cells = self._table_connectivity[level_index]
         level_data = self.getFlameletDataForTableLevel(level_value)
+        data_per_type = self.getFlameletDataByTypeForTableLevel(level_value) if color_by_flamelet_type else {}
+
+        # Whether a flamelet data point is covered by the table follows from the cells themselves rather
+        # than from the perimiter, which needs no ordering and accounts for any hole in the mesh.
+        covered_by_table = None
+        if level_data is not None:
+            cell_finder = mtri.Triangulation(level_nodes[:, 0], level_nodes[:, 1], level_cells).get_trifinder()
+            covered_by_table = cell_finder(level_data[:, 0], level_data[:, 1]) >= 0
+            self._reportTableLevelCoverage(level_index, level_nodes, level_cells, covered_by_table)
 
         # An edge shared by a single cell lies on the perimiter of the mesh. The perimiter node indices are
         # not ordered along the perimiter, so the edges are collected from the connectivity instead.
@@ -385,14 +501,25 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         near_middle = np.absolute(perimiter_segments[:, :, 0].mean(axis=1) - x_detail) < detail_fraction*x_span
         y_detail = perimiter_segments[near_middle][:, :, 1].min()
 
+        flamelet_type_colors = plt.get_cmap("tab10").colors
         fig, axes = plt.subplots(1, 2, figsize=(17, 7), constrained_layout=True)
         for ax, is_detail in zip(axes, (False, True)):
             ax.triplot(level_nodes[:, 0], level_nodes[:, 1], level_cells, \
                        lw=0.3 if is_detail else 0.15, color='0.55', zorder=2)
-            if level_data is not None:
-                ax.plot(level_data[:, 0], level_data[:, 1], '.', color='red', zorder=1, \
-                        ms=4.0 if is_detail else 0.6, \
-                        label="flamelet data (%i points)" % len(level_data))
+            if color_by_flamelet_type:
+                for color, (flamelet_type, type_data) in zip(flamelet_type_colors, data_per_type.items()):
+                    ax.plot(type_data[:, 0], type_data[:, 1], '.', color=color, zorder=1, \
+                            ms=4.0 if is_detail else 0.8, \
+                            label="%s (%i points)" % (flamelet_type, len(type_data)))
+            elif level_data is not None:
+                # Discarded data is what the table loses, so it is marked out from the rest.
+                ax.plot(level_data[covered_by_table, 0], level_data[covered_by_table, 1], '.', \
+                        color='0.72', zorder=1, ms=4.0 if is_detail else 0.6, \
+                        label="flamelet data in table (%i points)" % np.count_nonzero(covered_by_table))
+                if not np.all(covered_by_table):
+                    ax.plot(level_data[~covered_by_table, 0], level_data[~covered_by_table, 1], '.', \
+                            color='red', zorder=1, ms=5.0 if is_detail else 2.0, \
+                            label="flamelet data outside table (%i points)" % np.count_nonzero(~covered_by_table))
             ax.add_collection(LineCollection(perimiter_segments, colors='k', \
                                              linewidths=2.0 if is_detail else 1.4, zorder=3))
             ax.plot([], [], '-', color='k', lw=1.6, label="mesh perimiter")
@@ -416,13 +543,46 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         self._saveOrCloseFigure(fig, save_path, show)
         return
 
+    def _reportTableLevelCoverage(self, level_index:int, level_nodes:np.ndarray[float], \
+                                  level_cells:np.ndarray[int], covered_by_table:np.ndarray[bool]):
+        """Report how much of the flamelet data of a table level ends up in the table.
+
+        :param level_index: index of the table level.
+        :type level_index: int
+        :param level_nodes: controlling variable coordinates of the table nodes.
+        :type level_nodes: np.ndarray[float]
+        :param level_cells: table level connectivity.
+        :type level_cells: np.ndarray[int]
+        :param covered_by_table: whether each flamelet data point falls within a table cell.
+        :type covered_by_table: np.ndarray[bool]
+        """
+        if self._verbosity < 1:
+            return
+
+        cell_corners = level_nodes[level_cells][:, :, :2]
+        edge_a = cell_corners[:, 1] - cell_corners[:, 0]
+        edge_b = cell_corners[:, 2] - cell_corners[:, 0]
+        covered_area = 0.5*np.sum(np.absolute(edge_a[:, 0]*edge_b[:, 1] - edge_a[:, 1]*edge_b[:, 0]))
+
+        print("Table level %i: %i nodes, %i cells covering %.5e in (%s, %s)" \
+              % (level_index, len(level_nodes), len(level_cells), covered_area, \
+                 self._table_cv_names[0], self._table_cv_names[1]))
+        print("               %i of %i flamelet data points inside the table, %i outside (%.3f%%)" \
+              % (np.count_nonzero(covered_by_table), len(covered_by_table), \
+                 np.count_nonzero(~covered_by_table), 100*np.mean(~covered_by_table)))
+        return
+
     def _getFluidDataForInterpolator(self):
-        flamelet_data_filename = os.sep.join((self._Config.GetOutputDir(), self._Config.GetConcatenationFileHeader()+"_full.csv"))
-        flameletDataPointCloud = pd.read_csv(flamelet_data_filename)
-        self._state_quantities = list(flameletDataPointCloud.keys())
-        self._table_vars = self._state_quantities.copy()
-        self.__flamelet_data = flameletDataPointCloud
-        return flameletDataPointCloud
+        # The manifold is read once and kept: the generator needs it on construction to know which
+        # quantities exist, and again when the interpolator is built.
+        if self.__flamelet_data is None:
+            flamelet_data_filename = os.sep.join((self._Config.GetOutputDir(), self._Config.GetConcatenationFileHeader()+"_full.csv"))
+            self.__flamelet_data = pd.read_csv(flamelet_data_filename)
+            self._state_quantities = list(self.__flamelet_data.keys())
+            self._table_vars = self._state_quantities.copy()
+            self._orderTableVarsByAxes()
+
+        return self.__flamelet_data
     
     def _processTableLevels(self):
         super()._processTableLevels()
@@ -488,6 +648,281 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             return self._scaler_controlling_variables.transform(cv_pointcloud[:,:2])
         return self._scaler_controlling_variables.transform(cv_pointcloud)
 
+    def __scaleEdge(self, progress_variable:np.ndarray[float], enthalpy:np.ndarray[float], levelValue:float):
+        """Scale progress variable and enthalpy of a table plane edge to the discretization space."""
+        level = levelValue*np.ones(len(progress_variable))
+        return self.__scalePlanarCoords(np.column_stack((progress_variable, enthalpy, level)))[:, :2]
+
+    def __fittedEdge(self, planar_data:np.ndarray[float], h_lower:float, h_upper:float, bounds_from_below:bool, \
+                     anchor_lower:float=None, anchor_upper:float=None):
+        """Fit a smooth edge to the extreme of the flamelet data over a range of enthalpy.
+
+        The edge is single valued in enthalpy, so it is swept along it. Each bin contributes the
+        extreme data point it holds, a shape preserving interpolant is fitted through a subset of
+        those, and its control points are then raised or lowered until the edge bounds the data.
+        Correcting the control points individually keeps a single distant point from displacing the
+        whole edge.
+
+        :param planar_data: table plane coordinates of the flamelet data.
+        :type planar_data: np.ndarray[float]
+        :param h_lower: enthalpy the edge starts at.
+        :type h_lower: float
+        :param h_upper: enthalpy the edge ends at.
+        :type h_upper: float
+        :param bounds_from_below: whether the edge bounds the data from below.
+        :type bounds_from_below: bool
+        :return: plane coordinates of the edge, ordered by ascending enthalpy, or None.
+        :rtype: np.ndarray[float]
+        """
+        within_range = (planar_data[:, 1] >= h_lower) & (planar_data[:, 1] <= h_upper)
+        pv_data, h_data = planar_data[within_range, 0], planar_data[within_range, 1]
+        if len(pv_data) < self.__min_flamelet_data_points:
+            return None
+
+        take_extreme = np.argmin if bounds_from_below else np.argmax
+        N_bins = DefaultSettings_FGM.table_boundary_bins
+        bin_edges = np.linspace(h_lower, h_upper, N_bins + 1)
+        bin_index = np.clip(np.digitize(h_data, bin_edges) - 1, 0, N_bins - 1)
+
+        station_h, station_pv = [], []
+        for iBin in range(N_bins):
+            in_bin = np.flatnonzero(bin_index == iBin)
+            if len(in_bin) >= self.__min_points_per_bin:
+                extreme = in_bin[take_extreme(pv_data[in_bin])]
+                station_h.append(h_data[extreme])
+                station_pv.append(pv_data[extreme])
+        if len(station_h) < self.__min_envelope_stations:
+            return None
+
+        station_h, station_pv = np.array(station_h), np.array(station_pv)
+        # The ends of the edge reach the extremes of the data rather than the last populated bin.
+        station_h[0], station_h[-1] = h_lower, h_upper
+
+        control = np.unique(np.linspace(0, len(station_h) - 1, \
+                                        DefaultSettings_FGM.table_boundary_edge_control_points).astype(int))
+        control_h, control_pv = station_h[control], station_pv[control]
+
+        # The corners the edge meets are fixed, so they are not moved by the fit.
+        if anchor_lower is not None:
+            control_pv[0] = anchor_lower
+        if anchor_upper is not None:
+            control_pv[-1] = anchor_upper
+
+        quantile = 100*DefaultSettings_FGM.table_boundary_data_quantile
+        for _ in range(self.__edge_fit_rounds):
+            edge = PchipInterpolator(control_h, control_pv)
+            outside = (edge(h_data) - pv_data) if bounds_from_below else (pv_data - edge(h_data))
+            nearest_control = np.argmin(np.absolute(h_data[:, np.newaxis] - control_h[np.newaxis, :]), axis=1)
+            for iControl in range(len(control_h)):
+                governed = (nearest_control == iControl)
+                if not np.any(governed):
+                    continue
+                excess = np.percentile(outside[governed], quantile)
+                if excess > 0:
+                    control_pv[iControl] += -excess if bounds_from_below else excess
+            if anchor_lower is not None:
+                control_pv[0] = anchor_lower
+            if anchor_upper is not None:
+                control_pv[-1] = anchor_upper
+
+        stations = np.linspace(h_lower, h_upper, self.__edge_sample_points)
+        return np.column_stack((PchipInterpolator(control_h, control_pv)(stations), stations))
+
+    def __checkPerimiter(self, perimiter:np.ndarray[float]):
+        """Verify that a perimiter is traversed anticlockwise and does not cross itself.
+
+        :param perimiter: planar coordinates of the perimiter.
+        :type perimiter: np.ndarray[float]
+        :raises Exception: if the perimiter crosses itself.
+        :return: the perimiter, oriented anticlockwise.
+        :rtype: np.ndarray[float]
+        """
+        x, y = perimiter[:, 0], perimiter[:, 1]
+        if 0.5*np.sum(x*np.roll(y, -1) - y*np.roll(x, -1)) < 0:
+            perimiter = perimiter[::-1]
+
+        start = perimiter
+        direction = np.roll(perimiter, -1, axis=0) - perimiter
+        determinant = direction[:, None, 0]*direction[None, :, 1] - direction[:, None, 1]*direction[None, :, 0]
+        offset = start[None, :, :] - start[:, None, :]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            along_a = (offset[:, :, 0]*direction[None, :, 1] - offset[:, :, 1]*direction[None, :, 0])/determinant
+            along_b = (offset[:, :, 0]*direction[:, None, 1] - offset[:, :, 1]*direction[:, None, 0])/determinant
+        crosses = (np.absolute(determinant) >= np.finfo(float).eps) \
+                  & (along_a > 1e-9) & (along_a < 1 - 1e-9) & (along_b > 1e-9) & (along_b < 1 - 1e-9)
+        if np.any(crosses):
+            raise Exception("Table level perimiter crosses itself at %i of its %i segments" \
+                            % (np.count_nonzero(crosses)//2, len(perimiter)))
+        return perimiter
+
+    def __rightConvexChain(self, planar_data:np.ndarray[float], start:np.ndarray[float], end:np.ndarray[float]):
+        """Chain of straight segments from start to end that bounds the data towards higher progress
+        variable and turns one way only.
+
+        The equilibrium side of a table plane is convex, so a convex chain follows it without the
+        overshoot an interpolant through scattered extremes would introduce.
+
+        :param planar_data: table plane coordinates of the flamelet data.
+        :type planar_data: np.ndarray[float]
+        :param start: corner the chain starts at.
+        :type start: np.ndarray[float]
+        :param end: corner the chain ends at.
+        :type end: np.ndarray[float]
+        :return: plane coordinates of the chain, ordered by ascending enthalpy.
+        :rtype: np.ndarray[float]
+        """
+        within = planar_data[(planar_data[:, 1] >= start[1]) & (planar_data[:, 1] <= end[1])]
+        candidates = np.vstack((start, within, end))
+        candidates = candidates[np.argsort(candidates[:, 1], kind="stable")]
+
+        chain = []
+        for point in candidates:
+            while len(chain) >= 2:
+                before, last = chain[-2], chain[-1]
+                turn = (last[0] - before[0])*(point[1] - before[1]) \
+                     - (last[1] - before[1])*(point[0] - before[0])
+                if turn <= 0:
+                    chain.pop()
+                else:
+                    break
+            chain.append(point)
+        return np.array(chain)
+
+    def __parametricBoundary(self, levelValue:float):
+        """Perimiter of a table plane that runs from the reactant to the product state.
+
+        The plane is a rough triangle: the reactants sit at a single progress variable, the burnt
+        products on the equilibrium side, and the two meet in a point at the coldest state. It is
+        closed at the top by a straight line at the enthalpy of the hottest reactant state. The
+        reactant line and the corner at which it meets the burner-stabilized edge carry the unburnt
+        state, so both are exact.
+
+        :param levelValue: value of the table level.
+        :type levelValue: float
+        :return: planar coordinates of the perimiter, or None if the level holds too little data.
+        :rtype: np.ndarray[float]
+        """
+        _, _, _, _, h_min_unb = self.__reactantProductBounds(levelValue)
+        h_corner = self.__scaleEdge(np.array([0.0]), np.array([h_min_unb]), levelValue)[0, 1]
+
+        planar_data = self.__flameletDataForTableLevel(levelValue)
+        if planar_data is None:
+            return None
+
+        pv_data, h_data = planar_data[:, 0], planar_data[:, 1]
+
+        # The reactants sit at one progress variable, which the data gives exactly.
+        pv_reactants = pv_data.min()
+
+        # The plane is closed at the hottest reactant state, so that the top runs at one enthalpy from
+        # the reactant line to the products. Data above it is a sliver that the table leaves out.
+        on_reactant_line = pv_data <= pv_reactants + self.__corner_data_fraction*np.ptp(pv_data)
+        h_top = h_data[on_reactant_line].max()
+
+        planar_data = planar_data[planar_data[:, 1] <= h_top]
+        if len(planar_data) < self.__min_flamelet_data_points:
+            return None
+        pv_data, h_data = planar_data[:, 0], planar_data[:, 1]
+        h_bottom = h_data.min()
+
+        # The coldest state is a single point, where the two sides of the triangle meet.
+        coldest = h_data < h_bottom + self.__corner_data_fraction*(h_top - h_bottom)
+        apex = np.array([pv_data[coldest].max(), h_bottom])
+
+        topmost = h_data > h_top - self.__corner_data_fraction*(h_top - h_bottom)
+        corner_right = np.array([pv_data[topmost].max(), h_top])
+        corner_left = np.array([pv_reactants, h_top])
+
+        equilibrium_edge = self.__rightConvexChain(planar_data, apex, corner_right)
+        burner_edge = self.__fittedEdge(planar_data, h_bottom, h_corner, bounds_from_below=True, \
+                                        anchor_lower=apex[0], anchor_upper=pv_reactants)
+        if burner_edge is None:
+            return None
+
+        # From the coldest state up the equilibrium side, across the top, down the reactant line,
+        # then back down the burner-stabilized side to the same point it started from.
+        perimiter = np.vstack((equilibrium_edge, [corner_left], [[pv_reactants, h_corner]], burner_edge[::-1]))
+        return self.__checkPerimiter(self.__mergeCoincidentPolylinePoints(perimiter))
+
+    def getManifoldRange(self, varname:str):
+        """Extent of a quantity over the flamelet data the manifold is described by.
+
+        Useful for placing the table on the data rather than on values chosen in advance, for instance
+        to span the table levels over the mixture fractions that were actually generated.
+
+        :param varname: name of the manifold quantity.
+        :type varname: str
+        :return: lowest and highest value of the quantity in the flamelet data.
+        :rtype: tuple[float]
+        :raises Exception: if the quantity is not part of the flamelet data.
+        """
+        flamelet_data = self._getFluidDataForInterpolator()
+        if varname not in flamelet_data:
+            raise Exception("%s is not part of the flamelet data (%s)" % (varname, ", ".join(self._state_quantities)))
+
+        values = flamelet_data[varname].to_numpy(dtype=float)
+        return float(np.min(values)), float(np.max(values))
+
+    def __levelBandwidth(self):
+        """Half width in the level controlling variable of the band of flamelet data a table level is
+        built from, or None when the table holds a single level that all data belongs to.
+        """
+        if not (self._is3D() and len(self._table_levels) > 1):
+            return None
+        level_spacing = np.mean(np.diff(np.sort(self._table_levels)))
+        if level_spacing <= 0:
+            return None
+        return self.__level_bandwidth * level_spacing
+
+    def __readFlameletDataPerType(self):
+        """Read the controlling variables of every flamelet solution, kept apart per flamelet type.
+
+        The concatenated manifold does not record which solver produced a data point, so the flamelet
+        solutions themselves are read back. Only the columns the controlling variables follow from are
+        read, which keeps the sweep over all solutions to seconds rather than minutes.
+        """
+        pv_columns = ["Y-%s" % species for species in self._Config.GetProgressVariableSpecies()]
+        stored_cvs = [cv for cv in self._table_cv_names if cv != DefaultSettings_FGM.name_pv]
+        columns = stored_cvs + pv_columns
+
+        data_per_type = {}
+        for flamelet_type in self._Config.getFlameletTypes():
+            solver = FlameletSolverDict[flamelet_type](self._Config)
+            flamelet_files = sorted(glob.glob(os.sep.join((self._Config.GetOutputDir(), \
+                                                           solver.getFlameletFolder(), "*", "*.csv"))))
+            cv_data = []
+            for flamelet_file in flamelet_files:
+                flamelet = pd.read_csv(flamelet_file, usecols=columns)
+                pv = self._Config.ComputeProgressVariable(list(flamelet.keys()), flamelet.to_numpy())
+                cv_data.append(np.column_stack(tuple(pv if cv == DefaultSettings_FGM.name_pv \
+                                                     else flamelet[cv].to_numpy() \
+                                                     for cv in self._table_cv_names)))
+            if len(cv_data) > 0:
+                data_per_type[solver.getPlotLabel()] = np.vstack(cv_data)
+        return data_per_type
+
+    def getFlameletDataByTypeForTableLevel(self, levelValue:float):
+        """Retrieve the flamelet data a table level is constructed from, split by the flamelet type it
+        was produced by. The selection is the one getFlameletDataForTableLevel makes, so the two describe
+        the same data.
+
+        :param levelValue: value of the table level.
+        :type levelValue: float
+        :return: controlling variable values per flamelet type.
+        :rtype: dict[str, np.ndarray[float]]
+        """
+        if self.__flamelet_data_by_type is None:
+            self.__flamelet_data_by_type = self.__readFlameletDataPerType()
+
+        bandwidth = self.__levelBandwidth()
+        data_per_type = {}
+        for flamelet_type, cv_data in self.__flamelet_data_by_type.items():
+            if bandwidth is not None:
+                cv_data = cv_data[np.absolute(cv_data[:, 2] - levelValue) <= bandwidth]
+            if len(cv_data) > 0:
+                data_per_type[flamelet_type] = cv_data
+        return data_per_type
+
     def getFlameletDataForTableLevel(self, levelValue:float):
         """Retrieve the flamelet data a table level is constructed from, in controlling variable values. For a
         three-dimensional table this is the band of flamelets around the level rather than the whole manifold,
@@ -503,14 +938,12 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             return None
 
         flamelet_data = self.__flamelet_data
-        if self._is3D() and len(self._table_levels) > 1:
-            level_spacing = np.mean(np.diff(np.sort(self._table_levels)))
-            if level_spacing > 0:
-                bandwidth = DefaultSettings_FGM.table_boundary_level_bandwidth * level_spacing
-                level_values = flamelet_data[self._table_cv_names[2]].to_numpy()
-                flamelet_data = flamelet_data[np.absolute(level_values - levelValue) <= bandwidth]
+        bandwidth = self.__levelBandwidth()
+        if bandwidth is not None:
+            level_values = flamelet_data[self._table_cv_names[2]].to_numpy()
+            flamelet_data = flamelet_data[np.absolute(level_values - levelValue) <= bandwidth]
 
-        if len(flamelet_data) < self.__min_populated_bins:
+        if len(flamelet_data) < self.__min_flamelet_data_points:
             return None
 
         return np.column_stack(tuple(flamelet_data[cv].to_numpy() for cv in self._table_cv_names))
@@ -557,38 +990,135 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         pv_data = planar_data[:, 0]
         h_data = planar_data[:, 1]
 
+        # Sweeping the progress variable yields both enthalpy branches at once, as the lowest and the
+        # highest data point of each bin.
         along_pv = self.__sweepEnvelope(pv_data, h_data, self.__N_boundary_bins)
         if along_pv is None:
             return None
-        pv_stations, h_lower, h_upper = along_pv
+        (pv_at_lowest_h, lowest_h), (pv_at_highest_h, highest_h) = along_pv
 
-        h_lower = self.__smoothEnvelope(h_lower, take_minimum=True)
-        h_upper = self.__smoothEnvelope(h_upper, take_minimum=False)
+        pv_lower, h_lower = self.__envelopeBranch(pv_at_lowest_h, lowest_h, pv_data, h_data, \
+                                                  encloses_from_below=True)
+        pv_upper, h_upper = self.__envelopeBranch(pv_at_highest_h, highest_h, pv_data, h_data, \
+                                                  encloses_from_below=False)
 
-        stations_lower = self.__simplifyEnvelope(pv_stations, h_lower, encloses_from_below=True)
-        stations_upper = self.__simplifyEnvelope(pv_stations, h_upper, encloses_from_below=False)
-
-        envelope = {"lower": np.column_stack((pv_stations[stations_lower], h_lower[stations_lower])),
-                    "upper": np.column_stack((pv_stations[stations_upper], h_upper[stations_upper])),
+        envelope = {"lower": np.column_stack((pv_lower, h_lower)),
+                    "upper": np.column_stack((pv_upper, h_upper)),
                     "equilibrium": None}
 
+        # The equilibrium branch is swept along the enthalpy, so its stations are enthalpies and the
+        # extreme it bounds is a progress variable. Only the highest of each bin is of interest.
         along_h = self.__sweepEnvelope(h_data, pv_data, self.__N_transverse_bins)
         if along_h is not None:
-            h_stations, _, pv_equilibrium = along_h
-            pv_equilibrium = self.__smoothEnvelope(pv_equilibrium, take_minimum=False)
-            stations_equilibrium = self.__simplifyEnvelope(h_stations, pv_equilibrium, encloses_from_below=False)
-            envelope["equilibrium"] = np.column_stack((pv_equilibrium[stations_equilibrium],
-                                                       h_stations[stations_equilibrium]))
+            _, (h_at_highest_pv, highest_pv) = along_h
+            h_equilibrium, pv_equilibrium = self.__envelopeBranch(h_at_highest_pv, highest_pv, h_data, pv_data, \
+                                                                  encloses_from_below=False)
+            envelope["equilibrium"] = np.column_stack((pv_equilibrium, h_equilibrium))
 
         self.__envelope_cache[levelValue] = envelope
         return envelope
 
-    def __sweepEnvelope(self, coordinate_along:np.ndarray[float], coordinate_across:np.ndarray[float], N_bins:int):
-        """Bin the data along one coordinate and collect the extremes of the other in each bin.
+    def __envelopeBranch(self, stations:np.ndarray[float], extremes:np.ndarray[float], \
+                         data_along:np.ndarray[float], data_across:np.ndarray[float], encloses_from_below:bool):
+        """Turn the extremes collected by a sweep into the stations of one envelope branch.
 
-        :return: the bin stations with the lower and upper extreme in each, or None if too few bins are
-            populated to describe a branch.
+        A branch is first reduced to the stations needed to describe it, and then given back whatever
+        stations that reduction, or the sampling itself, left data outside of. Enclosure is therefore
+        settled against the flamelet data rather than against a bin width, so the result does not shift
+        with the number of bins.
+
+        :param stations: coordinate of the extreme data point collected in each bin.
+        :type stations: np.ndarray[float]
+        :param extremes: transverse coordinate of that same data point.
+        :type extremes: np.ndarray[float]
+        :param data_along: sweep coordinate of the flamelet data.
+        :type data_along: np.ndarray[float]
+        :param data_across: transverse coordinate of the flamelet data.
+        :type data_across: np.ndarray[float]
+        :param encloses_from_below: whether the branch bounds the data from below.
+        :type encloses_from_below: bool
+        :return: the stations of the branch and the branch value at each of them.
         :rtype: tuple[np.ndarray[float]]
+        """
+        # Simplifying drops stations, which can leave data outside; enclosing inserts stations, which
+        # leaves the branch more detailed than it needs to be. Alternating settles on a branch that is
+        # both, and ending on the enclosing pass is what makes the result binding.
+        for _ in range(self.__branch_refinement_rounds):
+            retained = self.__simplifyEnvelope(stations, extremes, encloses_from_below)
+            stations, extremes = self.__encloseData(stations[retained], extremes[retained], \
+                                                    data_along, data_across, encloses_from_below)
+        return stations, extremes
+
+    def __encloseData(self, stations:np.ndarray[float], values:np.ndarray[float], \
+                      data_along:np.ndarray[float], data_across:np.ndarray[float], encloses_from_below:bool):
+        """Extend a branch onto every data point it leaves outside, so that it encloses them all.
+
+        A branch samples the boundary at its stations and runs straight between them, so data lying in
+        between can fall on the wrong side of a segment. Rather than displacing the branch outward by a
+        fixed margin, which would tie it to the bin width, the points that fall outside are made stations
+        of the branch themselves. The branch then passes through them exactly and encloses the rest.
+
+        :param stations: stations of the branch.
+        :type stations: np.ndarray[float]
+        :param values: branch value at each station.
+        :type values: np.ndarray[float]
+        :param data_along: sweep coordinate of the flamelet data.
+        :type data_along: np.ndarray[float]
+        :param data_across: transverse coordinate of the flamelet data.
+        :type data_across: np.ndarray[float]
+        :param encloses_from_below: whether the branch bounds the data from below.
+        :type encloses_from_below: bool
+        :return: the stations of the enclosing branch and its value at each of them.
+        :rtype: tuple[np.ndarray[float]]
+        """
+        # Data beyond the ends of the branch is not enclosed by it and is left to the branches that
+        # close the perimiter there.
+        spanned = (data_along >= stations[0]) & (data_along <= stations[-1])
+        data_along, data_across = data_along[spanned], data_across[spanned]
+
+        # Inserting a station changes the two segments meeting at it, which can leave further points
+        # outside; a handful of passes settles it, and each pass strictly encloses more than the last.
+        for _ in range(self.__max_enclosure_passes):
+            branch_at_data = np.interp(data_along, stations, values)
+            outside = (data_across < branch_at_data) if encloses_from_below else (data_across > branch_at_data)
+            if not np.any(outside):
+                break
+
+            stations = np.append(stations, data_along[outside])
+            values = np.append(values, data_across[outside])
+
+            # Ordered along the sweep, and within a shared station by value, so that the outermost of
+            # any points sitting at the same station comes last. Points sharing a station would
+            # otherwise make the branch ambiguous.
+            order = np.lexsort((-values if encloses_from_below else values, stations))
+            stations, values = stations[order], values[order]
+
+            keep = np.append(np.diff(stations) > 0, True)
+            stations, values = stations[keep], values[keep]
+
+        return stations, values
+
+    def __sweepEnvelope(self, coordinate_along:np.ndarray[float], coordinate_across:np.ndarray[float], N_bins:int):
+        """Bin the data along one coordinate and collect the extreme data point of the other in each bin.
+
+        A station is placed on the extreme data point itself, at both of its coordinates. Placing it at
+        the centre of its bin instead displaces the envelope outward by however far the extreme sits from
+        that centre, which is a bias of up to half a bin width that only disappears as the bin count
+        grows. Following the data points removes it, and makes the result far less sensitive to the bin
+        count: the bins then only decide how finely the boundary is sampled, not where it lies.
+
+        The lower and upper extreme of a bin are two different data points at two different positions
+        along the sweep, so each branch carries its own stations.
+
+        :param coordinate_along: coordinate to bin the data along.
+        :type coordinate_along: np.ndarray[float]
+        :param coordinate_across: coordinate to collect the extremes of.
+        :type coordinate_across: np.ndarray[float]
+        :param N_bins: number of bins to sweep over.
+        :type N_bins: int
+        :return: the lower and upper branch, each as its own stations and values, or None if too few bins
+            are populated to describe a branch.
+        :rtype: tuple[tuple[np.ndarray[float]]]
         """
         station_min, station_max = np.min(coordinate_along), np.max(coordinate_along)
         if station_max <= station_min:
@@ -597,26 +1127,63 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         bin_edges = np.linspace(station_min, station_max, N_bins + 1)
         bin_index = np.clip(np.digitize(coordinate_along, bin_edges) - 1, 0, N_bins - 1)
 
-        branch_lower = np.full(N_bins, np.nan)
-        branch_upper = np.full(N_bins, np.nan)
+        extreme_lower, extreme_upper = [], []
         for iBin in range(N_bins):
-            data_in_bin = (bin_index == iBin)
+            data_in_bin = np.flatnonzero(bin_index == iBin)
             # Bins collecting only the tail of a single flamelet are not representative of the boundary.
-            if np.count_nonzero(data_in_bin) >= DefaultSettings_FGM.table_boundary_min_points_per_bin:
-                branch_lower[iBin] = np.min(coordinate_across[data_in_bin])
-                branch_upper[iBin] = np.max(coordinate_across[data_in_bin])
+            if len(data_in_bin) >= self.__min_points_per_bin:
+                extreme_lower.append(data_in_bin[np.argmin(coordinate_across[data_in_bin])])
+                extreme_upper.append(data_in_bin[np.argmax(coordinate_across[data_in_bin])])
 
-        populated_bins = np.invert(np.isnan(branch_lower))
-        if np.count_nonzero(populated_bins) < self.__min_populated_bins:
+        if len(extreme_lower) < self.__min_envelope_stations:
             return None
 
-        stations = (0.5*(bin_edges[:-1] + bin_edges[1:]))[populated_bins]
+        # Bins are disjoint and swept in order, so the stations of a branch are already ascending.
+        return self.__branchOf(coordinate_along, coordinate_across, extreme_lower, encloses_from_below=True), \
+               self.__branchOf(coordinate_along, coordinate_across, extreme_upper, encloses_from_below=False)
 
-        # Anchor the outermost stations on the extremes of the data rather than on the centre of their bin.
-        stations[0] = station_min
-        stations[-1] = station_max
+    def __branchOf(self, coordinate_along:np.ndarray[float], coordinate_across:np.ndarray[float], \
+                   stations:list[int], encloses_from_below:bool):
+        """Assemble one branch from the data points a sweep collected, spanning the full extent of the data.
 
-        return stations, branch_lower[populated_bins], branch_upper[populated_bins]
+        A bin holding too little data contributes no station, and the outermost bins are the ones that
+        run out of data first. The branch would then stop short of the data it is meant to bound, so the
+        outermost data points along the sweep are made stations of it regardless.
+
+        :param coordinate_along: sweep coordinate of the flamelet data.
+        :type coordinate_along: np.ndarray[float]
+        :param coordinate_across: transverse coordinate of the flamelet data.
+        :type coordinate_across: np.ndarray[float]
+        :param stations: indices of the data points collected by the sweep, ordered along it.
+        :type stations: list[int]
+        :param encloses_from_below: whether the branch bounds the data from below.
+        :type encloses_from_below: bool
+        :return: the stations of the branch and the branch value at each of them.
+        :rtype: tuple[np.ndarray[float]]
+        """
+        outermost = self.__outermostData(coordinate_along, coordinate_across, encloses_from_below)
+        stations = [outermost[0]] + list(stations) + [outermost[1]]
+
+        stations = np.array(stations)
+        along, across = coordinate_along[stations], coordinate_across[stations]
+
+        # An outermost point that a bin already contributed is now present twice.
+        keep = np.append(np.diff(along) > 0, True)
+        return along[keep], across[keep]
+
+    def __outermostData(self, coordinate_along:np.ndarray[float], coordinate_across:np.ndarray[float], \
+                        encloses_from_below:bool):
+        """Locate the data points at either end of a sweep, taking the outermost where several share an end.
+
+        :return: index of the data point at the start and at the end of the sweep.
+        :rtype: tuple[int]
+        """
+        take_outermost = np.argmin if encloses_from_below else np.argmax
+
+        at_start = np.flatnonzero(coordinate_along == np.min(coordinate_along))
+        at_end = np.flatnonzero(coordinate_along == np.max(coordinate_along))
+        return at_start[take_outermost(coordinate_across[at_start])], \
+               at_end[take_outermost(coordinate_across[at_end])]
 
     def __polylineIntersection(self, polyline_a:np.ndarray[float], polyline_b:np.ndarray[float]):
         """Locate the last point at which two polylines cross.
@@ -624,24 +1191,29 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :return: the crossing point with the index of the crossed segment in each polyline, or None.
         :rtype: tuple
         """
-        crossing = None
-        for iSegment in range(len(polyline_a) - 1):
-            start_a = polyline_a[iSegment]
-            direction_a = polyline_a[iSegment + 1] - start_a
-            for jSegment in range(len(polyline_b) - 1):
-                start_b = polyline_b[jSegment]
-                direction_b = polyline_b[jSegment + 1] - start_b
+        start_a, direction_a = polyline_a[:-1], np.diff(polyline_a, axis=0)
+        start_b, direction_b = polyline_b[:-1], np.diff(polyline_b, axis=0)
 
-                determinant = direction_a[0]*direction_b[1] - direction_a[1]*direction_b[0]
-                if abs(determinant) < np.finfo(float).eps:
-                    continue
+        # Every segment of one polyline against every segment of the other, indexed as [a, b].
+        determinant = direction_a[:, None, 0]*direction_b[None, :, 1] \
+                    - direction_a[:, None, 1]*direction_b[None, :, 0]
+        offset = start_b[None, :, :] - start_a[:, None, :]
 
-                offset = start_b - start_a
-                along_a = (offset[0]*direction_b[1] - offset[1]*direction_b[0])/determinant
-                along_b = (offset[0]*direction_a[1] - offset[1]*direction_a[0])/determinant
-                if 0 <= along_a <= 1 and 0 <= along_b <= 1:
-                    crossing = (start_a + along_a*direction_a, iSegment, jSegment)
-        return crossing
+        # Parallel segments divide by a vanishing determinant; the crossing test below rejects the
+        # resulting non-finite positions, so only the warning has to be suppressed.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            along_a = (offset[:, :, 0]*direction_b[None, :, 1] - offset[:, :, 1]*direction_b[None, :, 0])/determinant
+            along_b = (offset[:, :, 0]*direction_a[:, None, 1] - offset[:, :, 1]*direction_a[:, None, 0])/determinant
+
+        crosses = (np.absolute(determinant) >= np.finfo(float).eps) \
+                  & (along_a >= 0) & (along_a <= 1) & (along_b >= 0) & (along_b <= 1)
+        if not np.any(crosses):
+            return None
+
+        # Crossings are listed by segment of the first polyline and then of the second, so the last
+        # one is the crossing furthest along both.
+        iSegment, jSegment = np.argwhere(crosses)[-1]
+        return start_a[iSegment] + along_a[iSegment, jSegment]*direction_a[iSegment], iSegment, jSegment
 
     def __simplifyEnvelope(self, pv_envelope:np.ndarray[float], h_envelope:np.ndarray[float], encloses_from_below:bool):
         """Reduce an envelope branch to the stations needed to describe it within the simplification tolerance.
@@ -659,9 +1231,9 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :return: indices of the retained stations.
         :rtype: np.ndarray[int]
         """
-        tolerance = DefaultSettings_FGM.table_boundary_simplification_tolerance * self._base_cell_size
+        tolerance = self.__simplification_tolerance * self._base_cell_size
         N_stations = len(pv_envelope)
-        if tolerance <= 0 or N_stations < self.__min_populated_bins:
+        if tolerance <= 0 or N_stations < self.__min_envelope_stations:
             return np.arange(N_stations)
 
         retained_stations = [0]
@@ -684,22 +1256,13 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
         return np.array(retained_stations)
 
-    def __smoothEnvelope(self, envelope:np.ndarray[float], take_minimum:bool):
-        """Smooth an envelope with a running extremum, which displaces the envelope outward only and can
-        therefore never exclude flamelet data from the table.
-        """
-        if DefaultSettings_FGM.table_boundary_smoothing_window <= 1:
-            return envelope
-
-        half_window = DefaultSettings_FGM.table_boundary_smoothing_window // 2
-        padded_envelope = np.pad(envelope, half_window, mode="edge")
-        smoothed_envelope = np.empty(len(envelope))
-        for iStation in range(len(envelope)):
-            window = padded_envelope[iStation:iStation + 2*half_window + 1]
-            smoothed_envelope[iStation] = np.min(window) if take_minimum else np.max(window)
-        return smoothed_envelope
-
     def _createBoundaryPolylineForTableLevel(self, levelValue:float):
+        # A plane running from the reactant to the product state is bounded by states that are
+        # evaluated rather than sampled, so its perimiter is built from those directly. Any other
+        # plane is bounded by the flamelet data alone.
+        if self.__spansReactantsToProducts():
+            return self.__parametricBoundary(levelValue)
+
         envelope = self.__envelopeForTableLevel(levelValue)
         if envelope is None:
             if self._verbosity > 0:
@@ -738,7 +1301,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     def __mergeCoincidentPolylinePoints(self, polyline:np.ndarray[float]):
         """Remove consecutive perimiter points that are too close together to span a mesh edge.
         """
-        merge_tolerance = DefaultSettings_FGM.table_boundary_merge_tolerance * self._base_cell_size
+        merge_tolerance = self.__merge_tolerance * self._base_cell_size
 
         retained_points = [polyline[0]]
         for point in polyline[1:]:
@@ -746,7 +1309,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
                 retained_points.append(point)
 
         # The closing segment is added by the mesher, so the perimiter should not end where it started.
-        if len(retained_points) > self.__min_populated_bins and \
+        if len(retained_points) > self.__min_perimiter_points and \
            np.linalg.norm(retained_points[-1] - retained_points[0]) <= merge_tolerance:
             retained_points.pop()
 
@@ -800,6 +1363,10 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     def _createPointCloudForTableLevel(self, levelValue:float):
         CV_grid_scaled, nodes_within_fallback_bounds = self.__referenceLattice(levelValue)
 
+        # The refinement field is sampled on the whole lattice rather than on the part of it that
+        # ends up inside the table level: the mesher asks for the cell size around the perimiter too.
+        self.__reference_lattice = CV_grid_scaled
+
         # Retain the nodes that lie within the table level.
         envelope = self.__envelopeForTableLevel(levelValue)
         if envelope is not None:
@@ -832,7 +1399,11 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         h_lower_at_node = np.interp(pv_nodes, lower_branch[:, 0], lower_branch[:, 1])
         h_upper_at_node = np.interp(pv_nodes, upper_branch[:, 0], upper_branch[:, 1])
 
-        within_progress_variable_range = (pv_nodes >= lower_branch[0, 0]) & (pv_nodes <= lower_branch[-1, 0])
+        # The branches carry their own stations, so the plane they bound together is where they overlap.
+        # Beyond that only one of them is defined and np.interp would extend it as a flat line.
+        pv_start = max(lower_branch[0, 0], upper_branch[0, 0])
+        pv_end = min(lower_branch[-1, 0], upper_branch[-1, 0])
+        within_progress_variable_range = (pv_nodes >= pv_start) & (pv_nodes <= pv_end)
         within_enthalpy_range = (h_nodes >= h_lower_at_node) & (h_nodes <= h_upper_at_node)
 
         nodes_within = within_progress_variable_range & within_enthalpy_range
@@ -861,6 +1432,63 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
         return ref_factor
     
+    def _passRefinementOptions(self, mesher:Mesh2DPlane):
+        super()._passRefinementOptions(mesher)
+
+        # Sampling the refinement on the reference lattice, once, replaces the per point evaluations
+        # the mesher would otherwise make while it decides where to place nodes. Those run into the
+        # hundreds of thousands for a single table level.
+        if self.__reference_lattice is not None:
+            mesher.setRefinementField(self.__reference_lattice, \
+                                      self._refinementFactorField(self.__reference_lattice))
+        return
+
+    def _refinementFactorField(self, plane_nodes:np.ndarray[float]):
+        refinement_factor = super()._refinementFactorField(plane_nodes)
+
+        if self.__refineGradients:
+            refinement_factor = np.minimum(refinement_factor, self.__gradientRefinementField(plane_nodes))
+
+        if self.__refine_equilibrium:
+            refinement_factor = np.minimum(refinement_factor, self.__equilibriumRefinementField(plane_nodes))
+
+        return refinement_factor
+
+    def __gradientRefinementField(self, plane_nodes:np.ndarray[float]):
+        """Refinement towards the steepest gradients, evaluated for every node at once.
+
+        :param plane_nodes: table plane coordinates to evaluate, one node per row.
+        :type plane_nodes: np.ndarray[float]
+        :return: refinement coefficient of each node.
+        :rtype: np.ndarray[float]
+        """
+        jacobian = self._fluid_data_interpolator.Jacobian(plane_nodes[:, :self._nDim_table], \
+                                                          varnames=self._refine_for_gradients_of)
+        jacobian = np.reshape(jacobian, (self._nDim_table, len(plane_nodes), len(self._refine_for_gradients_of)))
+
+        gradient_magnitude = np.linalg.norm(jacobian, axis=0) / self._gradient_norm_factors
+        coefficients = np.asarray(self._gradient_refinement_factors)
+
+        # Scale from no refinement where the quantity is flat, down to the coefficient where its
+        # gradient is the steepest found on the level; the strongest demand over the quantities wins.
+        per_quantity = np.maximum(coefficients, 1.0 - (1.0 - coefficients)*gradient_magnitude)
+        return np.minimum(np.min(per_quantity, axis=1), 1.0)
+
+    def __equilibriumRefinementField(self, plane_nodes:np.ndarray[float]):
+        """Refinement in proximity of the reactants and products, evaluated for every node at once.
+
+        :param plane_nodes: table plane coordinates to evaluate, one node per row.
+        :type plane_nodes: np.ndarray[float]
+        :return: refinement coefficient of each node.
+        :rtype: np.ndarray[float]
+        """
+        refinement_factor = np.ones(len(plane_nodes))
+        if self._is2D():
+            near_reactants_or_products = (plane_nodes[:, 0] <= self.__margin_equilibrium) \
+                                       | (plane_nodes[:, 0] >= (1 - self.__margin_equilibrium))
+            refinement_factor[near_reactants_or_products] = self.__equilibrium_refinement_factor
+        return refinement_factor
+
     def __applyGradientRefinement(self, x:float, y:float, z:float):
         cv_input = np.array([x,y,z])
         jac = self._fluid_data_interpolator.Jacobian(cv_input[:self._nDim_table], varnames=self._refine_for_gradients_of)

@@ -8,12 +8,9 @@ Config.SetConfigName("TableGeneration")
 Config.SetFuelDefinition(fuel_species=["CH4"], fuel_weights=[1.0])
 Config.SetReactionMechanism('gri30.yaml')
 
-# Single phi = 0.80 flame -> single mixture fraction point (min == max).
-# Table generation uses the modern SU2TableGenerator_FGM (see
-# 3_generate_table.py), which sizes itself from len(Config.GetControllingVariables())
-# and treats equal mixture bounds as a genuinely 2D (ProgressVariable, EnthalpyTot)
-# table. MixtureFraction does not need to be kept as an explicit controlling
-# variable, so equal bounds here are correct.
+# Single phi = 0.80 flame -> single mixture fraction point (min == max). Equal mixture bounds
+# reduce the controlling variables to progress variable and total enthalpy, which is exactly the
+# plane this table is spanned by, so no table axes have to be selected in 3_generate_table.py.
 Config.SetMixtureBounds(0.80, 0.80)
 Config.SetNpMix(1)
 

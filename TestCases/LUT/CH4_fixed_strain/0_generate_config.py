@@ -25,8 +25,7 @@ Config.RunBurnerFlames(False)
 Config.RunEquilibrium(False)
 
 Config.RunCounterFlames(True)
-Config.SetCounterFlowFixedStrain(True)
-Config.SetCounterFlowStrainRate(56.0)
+Config.SetCounterFlowStrainRate(56.0)   # holds the strain rate fixed; None sweeps it instead
 Config.SetInitialGridLength(0.02)   # flame width in metres
 
 Config.SetTransportModel('unity-Lewis-number')

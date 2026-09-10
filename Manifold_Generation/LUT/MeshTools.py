@@ -3,7 +3,6 @@ import gmsh
 from concave_hull import concave_hull, concave_hull_indexes
 from collections.abc import Callable
 from Common.CommonMethods import shoelace, FiniteDifferenceDerivative
-from shapely.geometry import Point, Polygon
 
 def default_refinement_function(this, x:float, y:float, z:float):
     return 1.0
@@ -14,6 +13,9 @@ class Mesh2DPlane:
     _pointCloud_hullNodes:np.ndarray[float] = None
     __mesh_along_coords:list[int] = [0, 1]
     __boundary_polyline:np.ndarray[float] = None
+    __refinement_field_nodes:np.ndarray[float] = None   # Lattice the refinement field is sampled on.
+    __refinement_field_values:np.ndarray[float] = None  # Refinement coefficient at each lattice node.
+    __refinement_field_tags:tuple = None                # Gmsh view and field currently holding it.
 
     _gmsh_geo:gmsh.model.geo = None
     _gmsh_mesher:gmsh.model.mesh = None
@@ -48,6 +50,10 @@ class Mesh2DPlane:
             
         self.__meshNodes, self.__connectivity, self.__hullNodeIDs = self.__mesh2D()
         self._gmsh_geo.synchronize()
+
+        # Views outlive the model they were added to, so the last one is discarded here rather than
+        # left to accumulate over the table levels.
+        self.__clearRefinementField()
         return
     
     def __optimizeMeshResolution(self):
@@ -296,11 +302,88 @@ class Mesh2DPlane:
         self._gmsh_mesher.clear()
         gmsh.option.setNumber("Mesh.MeshSizeMax", self._base_cell_size)
 
+        if self.__refinement_field_values is not None:
+            self.__prepareRefinementField()
+            return
+
         def meshSizeCallback(dim,tag,x,y,z,lc):
             refinement_factor = self.refinement_function(x, y, z)
             return self._base_cell_size * refinement_factor
         
         self._gmsh_mesher.setSizeCallback(meshSizeCallback)
+        return
+
+    def setRefinementField(self, field_nodes:np.ndarray[float], refinement_factors:np.ndarray[float]):
+        """Provide the local refinement sampled on a lattice, instead of a function to call back into.
+
+        The mesher evaluates the local cell size at far more locations than the mesh ends up having
+        nodes. Sampling the refinement once on a lattice and letting gmsh interpolate between those
+        samples replaces those evaluations entirely, at the cost of resolving the refinement no more
+        finely than the lattice does.
+
+        :param field_nodes: lattice the refinement is sampled on, as a regular grid of planar
+            coordinates ordered row by row.
+        :type field_nodes: np.ndarray[float]
+        :param refinement_factors: refinement coefficient at each lattice node.
+        :type refinement_factors: np.ndarray[float]
+        :raises Exception: if the lattice is not a square grid of at least two nodes per direction.
+        :raises Exception: if the number of refinement coefficients does not match the lattice.
+        """
+        nodes_per_direction = int(round(np.sqrt(len(field_nodes))))
+        if (nodes_per_direction < 2) or (nodes_per_direction**2 != len(field_nodes)):
+            raise Exception("Refinement field should be sampled on a square lattice of at least two nodes per direction")
+        if len(refinement_factors) != len(field_nodes):
+            raise Exception("Number of refinement coefficients does not match the refinement field lattice")
+
+        self.__refinement_field_nodes = np.reshape(np.asarray(field_nodes, dtype=float)[:, :2], \
+                                                   (nodes_per_direction, nodes_per_direction, 2))
+        self.__refinement_field_values = np.reshape(np.asarray(refinement_factors, dtype=float), \
+                                                    (nodes_per_direction, nodes_per_direction))
+        return
+
+    def __prepareRefinementField(self):
+        """Hand gmsh the local cell size as a background field built from the sampled refinement.
+
+        The field is rebuilt on every meshing pass because the coarse cell size scales it, and that
+        size is what the target node count iterates on. Only the scaling is redone: the refinement
+        itself was sampled once.
+        """
+        self.__clearRefinementField()
+
+        cell_size = self._base_cell_size * self.__refinement_field_values
+
+        # One scalar quadrangle per lattice cell, as four corner coordinates followed by the cell
+        # size at those same four corners. Gmsh interpolates within each quadrangle.
+        x, y = self.__refinement_field_nodes[:, :, 0], self.__refinement_field_nodes[:, :, 1]
+        corners = [(slice(None, -1), slice(None, -1)), (slice(None, -1), slice(1, None)),
+                   (slice(1, None), slice(1, None)), (slice(1, None), slice(None, -1))]
+        quadrangles = np.stack([x[c] for c in corners] + [y[c] for c in corners] \
+                               + [np.zeros_like(x[corners[0]])]*4 \
+                               + [cell_size[c] for c in corners], axis=-1)
+
+        view_tag = gmsh.view.add("cell size")
+        gmsh.view.addListData(view_tag, "SQ", quadrangles[:, :, 0].size, \
+                              np.reshape(quadrangles, -1).tolist())
+
+        field_tag = self._gmsh_mesher.field.add("PostView")
+        self._gmsh_mesher.field.setNumber(field_tag, "ViewTag", view_tag)
+        self._gmsh_mesher.field.setAsBackgroundMesh(field_tag)
+        self.__refinement_field_tags = (view_tag, field_tag)
+
+        # A background field only governs the cell size once gmsh stops deriving it from the geometry.
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+        return
+
+    def __clearRefinementField(self):
+        """Discard the view and field of a previous meshing pass, which would otherwise accumulate."""
+        if self.__refinement_field_tags is None:
+            return
+        view_tag, field_tag = self.__refinement_field_tags
+        self._gmsh_mesher.field.remove(field_tag)
+        gmsh.view.remove(view_tag)
+        self.__refinement_field_tags = None
         return
     
     def setRefinementFunction(self, function_input:Callable):
@@ -466,6 +549,9 @@ class MeshThermodynamicPlane(Mesh2DPlane):
     
 
     def __clipSaturationCurveToPlane(self, pts_offset_lower:np.ndarray[float], pts_offset_upper:np.ndarray[float]):
+        # Only the saturation curve of a thermodynamic plane is clipped against the hull, so shapely is
+        # imported here rather than at module level: meshing a table plane does not require it.
+        from shapely.geometry import Point, Polygon
 
         hull_pts_orig = concave_hull(self._pointCloud_hullNodes, length_threshold=self._base_cell_size)
         polygon_thermodynamic_plane = Polygon(hull_pts_orig)

@@ -1,3 +1,4 @@
 Documentation/html/*
 _site/*
-
+__pycache__/
+*.pyc
