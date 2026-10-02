@@ -13,6 +13,7 @@ class Mesh2DPlane:
     _pointCloud_hullNodes:np.ndarray[float] = None
     __mesh_along_coords:list[int] = [0, 1]
     __boundary_polyline:np.ndarray[float] = None
+    __boundary_point_tolerance:float = 1e-6           # Coincidence tolerance, in base cell sizes.
     __refinement_field_nodes:np.ndarray[float] = None   # Lattice the refinement field is sampled on.
     __refinement_field_values:np.ndarray[float] = None  # Refinement coefficient at each lattice node.
     __refinement_field_tags:tuple = None                # Gmsh view and field currently holding it.
@@ -161,20 +162,45 @@ class Mesh2DPlane:
         """Provide an ordered, closed polyline describing the perimiter of the 2D plane. When provided, the
         perimiter is taken from this polyline instead of being extracted as a hull around the point cloud.
 
+        Each point becomes a mesh vertex and each pair of consecutive points a perimiter edge, so
+        coincident points are dropped rather than meshed into zero-length edges. A polyline that
+        repeats its first point to close itself is accepted, as the closing segment is added here.
+
         :param boundary_coords_2D: planar coordinates of the perimiter, ordered along the perimiter. The
             closing segment between the last and first point is added automatically.
         :type boundary_coords_2D: np.ndarray[float]
         :raises Exception: if the polyline is not a two-column array.
         :raises Exception: if the polyline describes fewer than three points.
+        :raises Exception: if fewer than three unique points remain after dropping coincident ones.
         """
         polyline = np.asarray(boundary_coords_2D, dtype=float)
         if polyline.ndim != 2 or np.shape(polyline)[1] != len(self.__mesh_along_coords):
             raise Exception("Boundary polyline should be provided as an array with %i columns" % len(self.__mesh_along_coords))
         if len(polyline) < 3:
             raise Exception("Boundary polyline should describe at least three points")
+
+        polyline = self.__uniqueBoundaryPoints(polyline)
+        if len(polyline) < 3:
+            raise Exception("Boundary polyline should describe at least three unique points")
         self.__boundary_polyline = polyline
         return
 
+    def __uniqueBoundaryPoints(self, polyline:np.ndarray[float]):
+        """Drop consecutive points of a perimiter polyline that coincide, including the repeated point
+        of an explicitly closed polyline.
+        """
+        tolerance = self.__boundary_point_tolerance * self._base_cell_size
+
+        retained = [polyline[0]]
+        for point in polyline[1:]:
+            if np.linalg.norm(point - retained[-1]) > tolerance:
+                retained.append(point)
+
+        # The mesher adds the closing segment, so the polyline should not end where it started.
+        if len(retained) > 1 and np.linalg.norm(retained[-1] - retained[0]) <= tolerance:
+            retained.pop()
+
+        return np.array(retained)
 
     def __createHullCurvLoop(self, hull_coords:np.ndarray[float]):
 

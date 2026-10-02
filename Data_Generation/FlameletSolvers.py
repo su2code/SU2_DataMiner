@@ -625,14 +625,17 @@ class FlameletSolver_Cantera:
 
         :param flameletFileName: solution file path name.
         :type flameletFileName: str
+        :raises Exception: if the solution predates the current flamelet data format.
         """
         self._thermochemical_solution = pd.read_csv(flameletFileName)
         self._initial_grid = self._thermochemical_solution["Distance"]
 
-        if self._Config.GetMixtureStatus():
-            mixtureStatus = self._thermochemical_solution["ReactantMixtureFraction"][0]
-        else:
-            mixtureStatus = self._thermochemical_solution["ReactantEquivalenceRatio"][0]
+        name_mixture_status = "ReactantMixtureFraction" if self._Config.GetMixtureStatus() else "ReactantEquivalenceRatio"
+        if name_mixture_status not in self._thermochemical_solution:
+            raise Exception("Flamelet solution %s has no %s column and predates the current flamelet data format. "
+                            "Remove the flamelet data folders written by an earlier version and regenerate them."
+                            % (flameletFileName, name_mixture_status))
+        mixtureStatus = self._thermochemical_solution[name_mixture_status][0]
         self.setMixtureStatus(mixtureStatus)
         reactantTemperature = self._thermochemical_solution["ReactantTemperature"][0]
         self.setReactantTemperature(reactantTemperature)

@@ -65,6 +65,8 @@ class SU2TableGenerator_Base:
     __smoothTableData:bool = False
     __smoothingLevel:float = 0.1
 
+    __colormap:str = "viridis"
+
     __N_nearest_neighbors:int = None
     __inverse_distance_exponent:float = None
 
@@ -122,6 +124,16 @@ class SU2TableGenerator_Base:
 
         if self.__smoothTableData:
             self._smoothTableLevelData()
+
+        # Post-processing runs last, so that it constrains the data the table is written from rather
+        # than data that smoothing still alters afterwards.
+        self._postProcessTableData()
+        return
+
+    def _postProcessTableData(self):
+        """Constrain the generated table data. Derived generators override this to apply the
+        corrections their fluid model requires.
+        """
         return
     
     def _processTableLevels(self):
@@ -562,7 +574,7 @@ class SU2TableGenerator_Base:
         :type show_grid: bool, optional
         :param save_path: file path to save the figure to, defaults to None
         :type save_path: str, optional
-        :param show: keep the figure open for display, defaults to False
+        :param show: display the figure, defaults to False
         :type show: bool, optional
         :raises Exception: if the table level index is out of range.
         :raises Exception: if the variable to plot is not part of the table data.
@@ -573,64 +585,95 @@ class SU2TableGenerator_Base:
             self._checkTableLevelIndex(level_index)
 
         table_is_generated = (level_index < len(self._data_in_table)) and (self._data_in_table[level_index] is not None)
-        if not table_is_generated:
-            self._processTableLevels()
-            if self._fluid_data_interpolator is None:
-                self._defineFluidDataInterpolator()
-            self._checkTableLevelIndex(level_index)
-
         if table_is_generated:
             table_nodes = self._table_nodes[level_index]
             connectivity = self._table_connectivity[level_index]
             hull_nodes = self._table_hullnodes[level_index]
             data_level = self._data_in_table[level_index]
         else:
+            self._processTableLevels()
+            if self._fluid_data_interpolator is None:
+                self._defineFluidDataInterpolator()
+            self._checkTableLevelIndex(level_index)
             table_nodes, connectivity, hull_nodes, data_level = self.meshTableLevel(level_index)
 
         if var_to_plot is not None and var_to_plot not in data_level:
             raise Exception("%s is not part of the table data (%s)" % (var_to_plot, ", ".join(list(data_level.keys()))))
 
-        x_nodes = table_nodes[:, 0]
-        y_nodes = table_nodes[:, 1]
         if self._is3D():
             title = "%s = %.4e" % (self._table_cv_names[2], self._table_levels[level_index])
         else:
             title = "Table level %i" % level_index
 
+        plot_data = {"x_nodes" : table_nodes[:, 0],
+                     "y_nodes" : table_nodes[:, 1],
+                     "connectivity" : connectivity,
+                     "hull_nodes" : hull_nodes,
+                     "x_label" : self._table_cv_names[0],
+                     "y_label" : self._table_cv_names[1],
+                     "z_label" : var_to_plot,
+                     "title" : title,
+                     "show_grid" : show_grid,
+                     "colormap" : self.__colormap}
+        if var_to_plot is not None:
+            plot_data["values"] = data_level[var_to_plot].to_numpy(dtype=float)
+            plot_data["title"] = "%s at %s" % (var_to_plot, title)
+
         if var_to_plot is None:
-            fig, ax = plt.subplots(figsize=(10, 10))
-            ax.triplot(x_nodes, y_nodes, connectivity, linewidth=0.5)
-            ax.plot(x_nodes[hull_nodes], y_nodes[hull_nodes], 'ko', ms=3, label="Perimiter nodes")
-            ax.set_xlabel(self._table_cv_names[0], fontsize=14)
-            ax.set_ylabel(self._table_cv_names[1], fontsize=14)
-            ax.set_title(title, fontsize=14)
-            ax.legend(fontsize=12)
+            fig = self.__plotTableMesh(plot_data)
         elif plot_3d:
-            fig = plt.figure(figsize=(10, 10))
-            ax = fig.add_subplot(111, projection='3d')
-            ax.plot_trisurf(x_nodes, y_nodes, data_level[var_to_plot].to_numpy(dtype=float), \
-                            triangles=connectivity, cmap='viridis', alpha=0.9, \
-                            edgecolor='k' if show_grid else 'none', \
-                            linewidth=0.2 if show_grid else 0)
-            ax.set_xlabel(self._table_cv_names[0], fontsize=14)
-            ax.set_ylabel(self._table_cv_names[1], fontsize=14)
-            ax.set_zlabel(var_to_plot, fontsize=14)
-            ax.set_title(title, fontsize=14)
+            fig = self.__plotTableSurface3D(plot_data)
         else:
-            triangulation = mtri.Triangulation(x_nodes, y_nodes, connectivity)
-            fig, ax = plt.subplots(figsize=(10, 7), constrained_layout=True)
-            colormesh = ax.tripcolor(triangulation, data_level[var_to_plot].to_numpy(dtype=float), \
-                                     shading='gouraud', cmap='inferno')
-            if show_grid:
-                ax.triplot(triangulation, color='k', linewidth=0.2, alpha=0.4)
-            colorbar = fig.colorbar(colormesh, ax=ax, pad=0.02)
-            colorbar.set_label(var_to_plot, fontsize=12)
-            ax.set_xlabel(self._table_cv_names[0], fontsize=14)
-            ax.set_ylabel(self._table_cv_names[1], fontsize=14)
-            ax.set_title("%s at %s" % (var_to_plot, title), fontsize=14)
+            fig = self.__plotTableColorMap(plot_data)
 
         self._saveOrCloseFigure(fig, save_path, show)
         return
+
+    @staticmethod
+    def __labelAxes(ax, plot_data:dict):
+        """Apply the axis labels and title a table level plot shares."""
+        ax.set_xlabel(plot_data["x_label"], fontsize=14)
+        ax.set_ylabel(plot_data["y_label"], fontsize=14)
+        ax.set_title(plot_data["title"], fontsize=14)
+        return
+
+    @staticmethod
+    def __plotTableMesh(plot_data:dict):
+        """Plot the triangulation of a table level together with its perimiter nodes."""
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.triplot(plot_data["x_nodes"], plot_data["y_nodes"], plot_data["connectivity"], linewidth=0.5)
+        ax.plot(plot_data["x_nodes"][plot_data["hull_nodes"]], plot_data["y_nodes"][plot_data["hull_nodes"]], \
+                'ko', ms=3, label="Perimiter nodes")
+        SU2TableGenerator_Base.__labelAxes(ax, plot_data)
+        ax.legend(fontsize=12)
+        return fig
+
+    @staticmethod
+    def __plotTableSurface3D(plot_data:dict):
+        """Plot a table variable over a table level as a three-dimensional surface."""
+        show_grid = plot_data["show_grid"]
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_trisurf(plot_data["x_nodes"], plot_data["y_nodes"], plot_data["values"], \
+                        triangles=plot_data["connectivity"], cmap=plot_data["colormap"], alpha=0.9, \
+                        edgecolor='k' if show_grid else 'none', \
+                        linewidth=0.2 if show_grid else 0)
+        SU2TableGenerator_Base.__labelAxes(ax, plot_data)
+        ax.set_zlabel(plot_data["z_label"], fontsize=14)
+        return fig
+
+    @staticmethod
+    def __plotTableColorMap(plot_data:dict):
+        """Plot a table variable over a table level as a two-dimensional colour map."""
+        triangulation = mtri.Triangulation(plot_data["x_nodes"], plot_data["y_nodes"], plot_data["connectivity"])
+        fig, ax = plt.subplots(figsize=(10, 7), constrained_layout=True)
+        colormesh = ax.tripcolor(triangulation, plot_data["values"], shading='gouraud', cmap=plot_data["colormap"])
+        if plot_data["show_grid"]:
+            ax.triplot(triangulation, color='k', linewidth=0.2, alpha=0.4)
+        colorbar = fig.colorbar(colormesh, ax=ax, pad=0.02)
+        colorbar.set_label(plot_data["z_label"], fontsize=12)
+        SU2TableGenerator_Base.__labelAxes(ax, plot_data)
+        return fig
 
     def plotTableSlices(self, x_cv:str, y_var:str, slice_cv:str, slice_range:tuple=None, n_slices:int=10, \
                         n_x_points:int=200, level_value:float=None, save_path:str=None, show:bool=False):
@@ -655,7 +698,7 @@ class SU2TableGenerator_Base:
         :type level_value: float, optional
         :param save_path: file path to save the figure to, defaults to None
         :type save_path: str, optional
-        :param show: keep the figure open for display, defaults to False
+        :param show: display the figure, defaults to False
         :type show: bool, optional
         :raises Exception: if the horizontal or slice variable does not span the table.
         :raises Exception: if the state variable is not available in the fluid data.
@@ -701,7 +744,7 @@ class SU2TableGenerator_Base:
         cv_pointcloud_scaled = self._fluid_data_interpolator.getControllingVariableNodes()
         data_support = Delaunay(cv_pointcloud_scaled[:, [x_index, slice_index]])
 
-        colormap = plt.cm.coolwarm
+        colormap = plt.get_cmap(self.__colormap)
         color_norm = plt.Normalize(vmin=slice_min, vmax=slice_max)
         fig, ax = plt.subplots(figsize=(9, 5), constrained_layout=True)
 
@@ -743,11 +786,13 @@ class SU2TableGenerator_Base:
         return
 
     def _saveOrCloseFigure(self, fig, save_path:str, show:bool):
-        """Save a figure when a file path is provided and close it unless it is to be displayed."""
+        """Save a figure when a file path is provided, then display it or close it."""
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             self.__printmsg("Saved figure %s" % save_path)
-        if not show:
+        if show:
+            plt.show()
+        else:
             plt.close(fig)
         return
 
@@ -956,6 +1001,26 @@ class SU2TableGenerator_Base:
         self.__inverse_distance_exponent = p_factor
         return
     
+    def setColorMap(self, colormap:str="viridis"):
+        """Set the colormap the table visualization functions colour their data with.
+
+        :param colormap: name of a matplotlib colormap, defaults to "viridis"
+        :type colormap: str, optional
+        :raises Exception: if the colormap is not known to matplotlib.
+        """
+        if colormap not in plt.colormaps():
+            raise Exception("%s is not a matplotlib colormap" % colormap)
+        self.__colormap = colormap
+        return
+
+    def getColorMap(self):
+        """Colormap used by the table visualization functions.
+
+        :return: name of the matplotlib colormap.
+        :rtype: str
+        """
+        return self.__colormap
+
     def setSmoothingParameter(self, smoothening_factor:float=0):
         """Apply smoothing to table data. High value = more smoothing, low value = no smoothing
 

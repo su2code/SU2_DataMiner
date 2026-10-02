@@ -27,6 +27,7 @@ import pandas as pd
 import os
 import glob
 from scipy.interpolate import PchipInterpolator
+from Common.Interpolators import polylineIntersection
 from Common.Properties import EntropicVars,DefaultSettings_FGM
 from su2dataminer.generate_data import DataGenerator_CoolProp
 from Common.DataDrivenConfig import Config_NICFD,Config_FGM
@@ -175,6 +176,12 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     __equilibrium_refinement_factor:float = 0.5
     __margin_equilibrium:float = 2e-2
 
+    __clampSourceTerms:bool = False
+    __clamp_species:list[str] = []
+    __clamp_pv_margin:float = 1e-2
+    __clamp_abs_tol:float = 1e-3
+    __pv_extent_over_levels:tuple = None
+
     __flamelet_data:pd.DataFrame = None
     __envelope_cache:dict = None
     __reference_lattice:np.ndarray[float] = None
@@ -243,6 +250,11 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         self.__pointcloud_resolution = resolution
         return
 
+    def __invalidateEnvelopes(self):
+        """Discard the cached data envelopes, which were shaped by the previous boundary settings."""
+        self.__envelope_cache = {}
+        return
+
     def setBoundaryBinCount(self, N_bins:int=DefaultSettings_FGM.table_boundary_bins):
         """Specify the number of bins along the progress variable used to extract the data envelope bounding
         each table level. Higher values follow the flamelet data more closely, at the cost of a perimiter that
@@ -255,6 +267,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if N_bins < self.__min_envelope_stations:
             raise Exception("Number of boundary bins should be at least %i." % self.__min_envelope_stations)
         self.__N_boundary_bins = N_bins
+        self.__invalidateEnvelopes()
         return
 
     def setBoundaryTransverseBinCount(self, N_bins:int=DefaultSettings_FGM.table_boundary_transverse_bins):
@@ -274,6 +287,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if N_bins < self.__min_envelope_stations:
             raise Exception("Number of transverse boundary bins should be at least %i." % self.__min_envelope_stations)
         self.__N_transverse_bins = N_bins
+        self.__invalidateEnvelopes()
         return
 
     def setBoundaryMinPointsPerBin(self, N_points:int=DefaultSettings_FGM.table_boundary_min_points_per_bin):
@@ -289,6 +303,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if N_points < 1:
             raise Exception("A bin should hold at least one data point to contribute an envelope station.")
         self.__min_points_per_bin = N_points
+        self.__invalidateEnvelopes()
         return
 
     def setBoundaryLevelBandwidth(self, bandwidth:float=DefaultSettings_FGM.table_boundary_level_bandwidth):
@@ -305,6 +320,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if bandwidth <= 0:
             raise Exception("The table level bandwidth should be positive.")
         self.__level_bandwidth = bandwidth
+        self.__invalidateEnvelopes()
         return
 
     def setBoundarySimplificationTolerance(self, tolerance:float=DefaultSettings_FGM.table_boundary_simplification_tolerance):
@@ -320,6 +336,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if tolerance < 0:
             raise Exception("The envelope simplification tolerance should not be negative.")
         self.__simplification_tolerance = tolerance
+        self.__invalidateEnvelopes()
         return
 
     def setBoundaryMergeTolerance(self, tolerance:float=DefaultSettings_FGM.table_boundary_merge_tolerance):
@@ -334,6 +351,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if tolerance < 0:
             raise Exception("The perimiter merge tolerance should not be negative.")
         self.__merge_tolerance = tolerance
+        self.__invalidateEnvelopes()
         return
 
     def applyRefinementForGradientOf(self, varname:str, coef:float=0.5):
@@ -369,81 +387,138 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         self.__margin_equilibrium = margin
         return
     
-    def ClampSourceTerms(self, species_list:list[str], pv_frac:float=0.99, abs_tol:float=1e-3):
-        """Clamp source terms of selected species to zero near the burnt (high-PV) boundary.
+    def setSourceTermClamping(self, species_list:list[str], pv_margin:float=1e-2, abs_tol:float=1e-3):
+        """Clamp the source terms of selected species to zero near the reactant and product boundaries.
 
-        For each table level the per-level progress variable maximum is computed. At every node
-        where PV >= ``pv_frac * PV_max`` the net, positive, and negative source terms
-        (``Y_dot_net-<sp>``, ``Y_dot_pos-<sp>``, ``Y_dot_neg-<sp>``) of each species in
-        ``species_list`` are set to zero when their absolute value is below ``abs_tol``.
-        In addition, the production terms are clipped to be non-negative and the consumption
-        terms non-positive over all nodes, as SU2 evaluates the species source as
-        ``source_prod + source_cons * y_aux``.
+        SU2 evaluates a species source as ``source_prod + source_cons * y_aux``, so production terms are
+        clipped to be non-negative and consumption terms non-positive over the whole table. Within a margin
+        of the reactant and of the product progress variable the net, positive and negative source terms
+        (``Y_dot_net-<sp>``, ``Y_dot_pos-<sp>``, ``Y_dot_neg-<sp>``) are additionally set to zero where
+        their absolute value is below ``abs_tol``, as neither boundary sustains reaction.
 
-        Call this method after :meth:`generateTable` and before :meth:`writeSU2Table`.
+        Clamping the reactant side leaves burner-stabilized flamelets untouched, since their inflow
+        progress variable exceeds the reactant progress variable.
+
+        The clamp is applied during :meth:`generateTable` and may be configured at any point before it.
 
         :param species_list: species names to clamp (e.g. ``['CO', 'H2']``).
         :type species_list: list[str]
-        :param pv_frac: fraction of the PV maximum above which clamping is applied, defaults to 0.99
-        :type pv_frac: float, optional
+        :param pv_margin: width of each clamped band, as a fraction of the progress variable span between
+            the reactant and product state, defaults to 1e-2
+        :type pv_margin: float, optional
         :param abs_tol: source terms with an absolute value below this are set to zero, defaults to 1e-3
         :type abs_tol: float, optional
-        :raises Exception: if the table data have not been generated yet.
+        :raises Exception: if the margin lies outside the interval [0, 0.5).
+        :raises Exception: if the tolerance is negative.
         """
-        if not species_list:
-            return
-        if len(self._data_in_table) == 0:
-            raise Exception("Table data are not available, run generateTable before clamping source terms.")
+        if (pv_margin < 0) or (pv_margin >= 0.5):
+            raise Exception("The progress variable margin should lie between 0 and 0.5.")
+        if abs_tol < 0:
+            raise Exception("The source term tolerance should not be negative.")
+        self.__clampSourceTerms = bool(species_list)
+        self.__clamp_species = list(species_list)
+        self.__clamp_pv_margin = pv_margin
+        self.__clamp_abs_tol = abs_tol
+        return
 
-        name_pv = DefaultSettings_FGM.name_pv
-        if name_pv not in self._data_in_table[0]:
-            print("ClampSourceTerms: %s is not part of the table data, skipping." % name_pv)
-            return
+    def _postProcessTableData(self):
+        """Apply the configured source term clamp to the generated table data."""
+        if self.__clampSourceTerms:
+            self.__clampSpeciesSourceTerms()
+        return
 
-        # Collect the source term names per role, skipping those absent from the table.
+    def __sourceTermsToClamp(self):
+        """Collect the table variables holding the source terms of the clamped species, per role.
+
+        :return: the net, production and consumption source term names present in the table.
+        :rtype: tuple[list[str]]
+        """
         vars_net, vars_pos, vars_neg = [], [], []
-        for species in species_list:
+        for species in self.__clamp_species:
             for name_format, bucket in (("Y_dot_net-%s", vars_net),
                                         ("Y_dot_pos-%s", vars_pos),
                                         ("Y_dot_neg-%s", vars_neg)):
                 var_name = name_format % species
                 if var_name in self._table_vars:
                     bucket.append(var_name)
-                else:
-                    print("ClampSourceTerms: variable %s is not a table variable, skipping." % var_name)
+                elif self._verbosity > 0:
+                    print("Source term clamping: %s is not a table variable, skipping." % var_name)
+        return vars_net, vars_pos, vars_neg
 
+    def __progressVariableExtent(self, levelValue:float, pv_nodes:np.ndarray[float]):
+        """Reactant and product progress variable bounding a table level.
+
+        A plane spanned by the progress variable runs between the reactant and product states, which are
+        evaluated directly. Any other plane is bounded by the flamelet data alone, so its extremes stand
+        in for those states. When the progress variable sweeps the table levels instead of spanning the
+        plane it is constant within a level, so those extremes are taken over all levels.
+
+        :return: reactant and product progress variable.
+        :rtype: tuple[float]
+        """
+        if self.__spansReactantsToProducts():
+            pv_unb, pv_b, _, _, _ = self.__reactantProductBounds(levelValue)
+            return pv_unb, pv_b
+        if self.__pv_extent_over_levels is not None:
+            return self.__pv_extent_over_levels
+        return np.min(pv_nodes), np.max(pv_nodes)
+
+    def __clampedProgressVariableBands(self, levelValue:float, pv_nodes:np.ndarray[float]):
+        """Bound the progress variable bands at the reactant and at the product side of a table level.
+
+        :return: upper bound of the reactant band and lower bound of the product band.
+        :rtype: tuple[float]
+        """
+        pv_unb, pv_b = self.__progressVariableExtent(levelValue, pv_nodes)
+        margin = self.__clamp_pv_margin * (pv_b - pv_unb)
+        return pv_unb + margin, pv_b - margin
+
+    def __clampSpeciesSourceTerms(self):
+        """Zero negligible species source terms at the reactant and product boundaries and enforce the
+        sign of the production and consumption terms over the whole table.
+        """
+        name_pv = DefaultSettings_FGM.name_pv
+        if name_pv not in self._table_vars:
+            print("Source term clamping: %s is not part of the table data, skipping." % name_pv)
+            return
+
+        vars_net, vars_pos, vars_neg = self.__sourceTermsToClamp()
         vars_to_clamp = vars_net + vars_pos + vars_neg
         if len(vars_to_clamp) == 0:
             return
 
-        # When the progress variable sweeps across table levels it is constant within a level, so the
-        # burnt boundary follows from the progress variable maximum over all levels instead.
-        pv_is_level_cv = self._is3D() and (self._table_cv_names[-1] == name_pv)
-        if pv_is_level_cv:
-            pv_max_global = max(np.max(data_level[name_pv].to_numpy(dtype=float)) for data_level in self._data_in_table)
+        # The progress variable is constant within a level when it sweeps the levels, so its extent is
+        # taken over the whole table instead.
+        self.__pv_extent_over_levels = None
+        if self._is3D() and (self._table_cv_names[-1] == name_pv):
+            pv_over_levels = [data_level[name_pv].to_numpy(dtype=float) for data_level in self._data_in_table]
+            self.__pv_extent_over_levels = (min(np.min(pv) for pv in pv_over_levels),
+                                            max(np.max(pv) for pv in pv_over_levels))
 
+        abs_tol = self.__clamp_abs_tol
         N_nodes_clamped = 0
         for iLevel in range(self._N_table_levels):
             data_level = self._data_in_table[iLevel]
             pv_nodes = data_level[name_pv].to_numpy(dtype=float)
-            pv_max = pv_max_global if pv_is_level_cv else np.max(pv_nodes)
-            nodes_near_products = pv_nodes >= pv_frac * pv_max
-            N_nodes_clamped += int(np.sum(nodes_near_products))
+            pv_reactants, pv_products = self.__clampedProgressVariableBands(self._table_levels[iLevel], pv_nodes)
 
-            # Near the burnt boundary: zero the source terms of negligible magnitude.
+            nodes_clamped = (pv_nodes <= pv_reactants) | (pv_nodes >= pv_products)
+            N_nodes_clamped += int(np.count_nonzero(nodes_clamped))
+
             for var_name in vars_to_clamp:
                 source_terms = data_level[var_name].to_numpy(dtype=float, copy=True)
-                source_terms[nodes_near_products & (np.abs(source_terms) < abs_tol)] = 0.0
+                source_terms[nodes_clamped & (np.absolute(source_terms) < abs_tol)] = 0.0
                 data_level[var_name] = source_terms
 
-            # Sign constraints over all nodes: production is never negative, consumption never positive.
+            # SU2 evaluates the species source as source_prod + source_cons * y_aux.
             for var_name in vars_pos:
                 data_level[var_name] = np.clip(data_level[var_name].to_numpy(dtype=float), 0.0, None)
             for var_name in vars_neg:
                 data_level[var_name] = np.clip(data_level[var_name].to_numpy(dtype=float), None, 0.0)
 
-        print("ClampSourceTerms: clamped %i nodes across %i table levels (pv_frac=%.3f, abs_tol=%.2e)." \
-              % (N_nodes_clamped, self._N_table_levels, pv_frac, abs_tol))
+        if self._verbosity > 0:
+            print("Source term clamping: clamped %i nodes across %i table levels (pv_margin=%.3e, abs_tol=%.2e)." \
+                  % (N_nodes_clamped, self._N_table_levels, self.__clamp_pv_margin, abs_tol))
         return
 
     def visualizeTableLevelPerimiter(self, level_index:int=0, detail_fraction:float=0.05, \
@@ -464,7 +539,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :type color_by_flamelet_type: bool, optional
         :param save_path: file path to save the figure to, defaults to None
         :type save_path: str, optional
-        :param show: keep the figure open for display, defaults to False
+        :param show: display the figure, defaults to False
         :type show: bool, optional
         :raises Exception: if the table has not been generated yet.
         :raises Exception: if the table level index is out of range.
@@ -680,7 +755,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             return None
 
         take_extreme = np.argmin if bounds_from_below else np.argmax
-        N_bins = DefaultSettings_FGM.table_boundary_bins
+        N_bins = self.__N_boundary_bins
         bin_edges = np.linspace(h_lower, h_upper, N_bins + 1)
         bin_index = np.clip(np.digitize(h_data, bin_edges) - 1, 0, N_bins - 1)
 
@@ -709,13 +784,17 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             control_pv[-1] = anchor_upper
 
         quantile = 100*DefaultSettings_FGM.table_boundary_data_quantile
+
+        # A control point governs the data nearest to it in enthalpy. The fit moves the control
+        # points across the progress variable only, so that grouping holds for every round.
+        nearest_control = np.argmin(np.absolute(h_data[:, np.newaxis] - control_h[np.newaxis, :]), axis=1)
+        governed_by = [np.flatnonzero(nearest_control == iControl) for iControl in range(len(control_h))]
+
         for _ in range(self.__edge_fit_rounds):
             edge = PchipInterpolator(control_h, control_pv)
             outside = (edge(h_data) - pv_data) if bounds_from_below else (pv_data - edge(h_data))
-            nearest_control = np.argmin(np.absolute(h_data[:, np.newaxis] - control_h[np.newaxis, :]), axis=1)
-            for iControl in range(len(control_h)):
-                governed = (nearest_control == iControl)
-                if not np.any(governed):
+            for iControl, governed in enumerate(governed_by):
+                if len(governed) == 0:
                     continue
                 excess = np.percentile(outside[governed], quantile)
                 if excess > 0:
@@ -1185,36 +1264,6 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return at_start[take_outermost(coordinate_across[at_start])], \
                at_end[take_outermost(coordinate_across[at_end])]
 
-    def __polylineIntersection(self, polyline_a:np.ndarray[float], polyline_b:np.ndarray[float]):
-        """Locate the last point at which two polylines cross.
-
-        :return: the crossing point with the index of the crossed segment in each polyline, or None.
-        :rtype: tuple
-        """
-        start_a, direction_a = polyline_a[:-1], np.diff(polyline_a, axis=0)
-        start_b, direction_b = polyline_b[:-1], np.diff(polyline_b, axis=0)
-
-        # Every segment of one polyline against every segment of the other, indexed as [a, b].
-        determinant = direction_a[:, None, 0]*direction_b[None, :, 1] \
-                    - direction_a[:, None, 1]*direction_b[None, :, 0]
-        offset = start_b[None, :, :] - start_a[:, None, :]
-
-        # Parallel segments divide by a vanishing determinant; the crossing test below rejects the
-        # resulting non-finite positions, so only the warning has to be suppressed.
-        with np.errstate(divide="ignore", invalid="ignore"):
-            along_a = (offset[:, :, 0]*direction_b[None, :, 1] - offset[:, :, 1]*direction_b[None, :, 0])/determinant
-            along_b = (offset[:, :, 0]*direction_a[:, None, 1] - offset[:, :, 1]*direction_a[:, None, 0])/determinant
-
-        crosses = (np.absolute(determinant) >= np.finfo(float).eps) \
-                  & (along_a >= 0) & (along_a <= 1) & (along_b >= 0) & (along_b <= 1)
-        if not np.any(crosses):
-            return None
-
-        # Crossings are listed by segment of the first polyline and then of the second, so the last
-        # one is the crossing furthest along both.
-        iSegment, jSegment = np.argwhere(crosses)[-1]
-        return start_a[iSegment] + along_a[iSegment, jSegment]*direction_a[iSegment], iSegment, jSegment
-
     def __simplifyEnvelope(self, pv_envelope:np.ndarray[float], h_envelope:np.ndarray[float], encloses_from_below:bool):
         """Reduce an envelope branch to the stations needed to describe it within the simplification tolerance.
 
@@ -1279,8 +1328,8 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             # The equilibrium branch replaces the segment closing the two enthalpy branches at maximum
             # progress variable. Both enthalpy branches are truncated where they cross it, so the corners are
             # the crossings themselves rather than the disagreement between the two sweeps.
-            corner_lower = self.__polylineIntersection(equilibrium_branch, lower_branch)
-            corner_upper = self.__polylineIntersection(equilibrium_branch, upper_branch)
+            corner_lower = polylineIntersection(equilibrium_branch, lower_branch)
+            corner_upper = polylineIntersection(equilibrium_branch, upper_branch)
             if corner_lower is not None and corner_upper is not None:
                 crossing_lower, equilibrium_start, station_lower = corner_lower
                 crossing_upper, equilibrium_end, station_upper = corner_upper

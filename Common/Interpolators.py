@@ -335,3 +335,34 @@ class fluidDataInterpolator:
                 return grads[:,0,:]
             else:
                 return grads
+
+
+def polylineIntersection(polyline_a:np.ndarray[float], polyline_b:np.ndarray[float]):
+    """Locate the last point at which two polylines cross.
+
+    :return: the crossing point with the index of the crossed segment in each polyline, or None.
+    :rtype: tuple
+    """
+    start_a, direction_a = polyline_a[:-1], np.diff(polyline_a, axis=0)
+    start_b, direction_b = polyline_b[:-1], np.diff(polyline_b, axis=0)
+
+    # Every segment of one polyline against every segment of the other, indexed as [a, b].
+    determinant = direction_a[:, None, 0]*direction_b[None, :, 1] \
+                - direction_a[:, None, 1]*direction_b[None, :, 0]
+    offset = start_b[None, :, :] - start_a[:, None, :]
+
+    # Parallel segments divide by a vanishing determinant; the crossing test below rejects the
+    # resulting non-finite positions, so only the warning has to be suppressed.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        along_a = (offset[:, :, 0]*direction_b[None, :, 1] - offset[:, :, 1]*direction_b[None, :, 0])/determinant
+        along_b = (offset[:, :, 0]*direction_a[:, None, 1] - offset[:, :, 1]*direction_a[:, None, 0])/determinant
+
+    crosses = (np.absolute(determinant) >= np.finfo(float).eps) \
+              & (along_a >= 0) & (along_a <= 1) & (along_b >= 0) & (along_b <= 1)
+    if not np.any(crosses):
+        return None
+
+    # Crossings are listed by segment of the first polyline and then of the second, so the last
+    # one is the crossing furthest along both.
+    iSegment, jSegment = np.argwhere(crosses)[-1]
+    return start_a[iSegment] + along_a[iSegment, jSegment]*direction_a[iSegment], iSegment, jSegment
