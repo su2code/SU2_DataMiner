@@ -20,5 +20,8 @@ Config = Config_FGM("TableGeneration.cfg")
 
 if __name__ == '__main__':
     ComputeFlameletData(Config, run_parallel=True, N_processors=4, loglevel=1,
-                        free_flame_refine={"ratio": 3.0, "slope": 0.1, "curve": 0.1, "prune": 0.01},
-                        burner_flame_refine={"ratio": 3.0, "slope": 0.15, "curve": 0.15, "prune": 0.01})
+                        # medium size
+                        #free_flame_refine={"ratio": 3.0, "slope": 0.1, "curve": 0.1, "prune": 0.01},
+                        #burner_flame_refine={"ratio": 3.0, "slope": 0.15, "curve": 0.15, "prune": 0.01})
+                        free_flame_refine={"ratio": 2.0, "slope": 0.05, "curve": 0.05, "prune": 0.01},
+                        burner_flame_refine={"ratio": 2.0, "slope": 0.1, "curve": 0.1, "prune": 0.01})

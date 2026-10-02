@@ -43,9 +43,9 @@ tablegen.setBoundaryBinCount(16)
 tablegen.setBoundaryTransverseBinCount(6)
 tablegen.applyRefinementForGradientOf("ProdRateTot_PV", coef=0.5)
 tablegen.refineEquilibrium(coef=0.5, margin=2e-2)
+tablegen.setSourceTermClamping(species_list=["CO", "CO2"], pv_margin=1e-2, abs_tol=0.1)
 
 tablegen.generateTable()
-tablegen.ClampSourceTerms(species_list=["CO", "CO2"], pv_frac=0.99, abs_tol=0.1)
 tablegen.writeSU2Table("LUT_test")
 
 # The harness cannot compare the tab separated data lines of the table file itself, so the

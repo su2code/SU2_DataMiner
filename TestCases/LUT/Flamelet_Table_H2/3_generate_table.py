@@ -1,19 +1,19 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 from Common.DataDrivenConfig import Config_FGM
 from Manifold_Generation.LUT.LUTGenerators import SU2TableGenerator_FGM
 
 
 # ── Output options ──────────────────────────────────────────────────────────
-SHOW_FIGURES = True    # keep all figures open (non-blocking) while script runs
+# Displaying a figure blocks until it is closed, so the script runs unattended by default.
+SHOW_FIGURES = False
 SAVE_FIGURES = True    # save all figures as PNG files in the working directory
 
 def _save(name):
     return name if SAVE_FIGURES else None
 
 def _show(fig_fn, *args, **kwargs):
-    """Call a visualisation method once with save_path and show set from the global flags."""
+    """Call a visualisation method with save_path and show taken from the global flags."""
     if not SHOW_FIGURES and not SAVE_FIGURES:
         return
     kwargs['save_path'] = kwargs.get('save_path') if SAVE_FIGURES else None
@@ -28,7 +28,8 @@ Config = Config_FGM("TableGeneration.cfg")
 # Initializing table module and pre-process interpolator.
 # n_near = number of nearest neighbors
 Tgen = SU2TableGenerator_FGM(Config)
-Tgen.setNNearestNeighbors(10)
+#Tgen.setNNearestNeighbors(10)
+Tgen.setNNearestNeighbors(40)
 Tgen.setInverseDistanceExponent(3)
 
 # Performance optimizations
@@ -59,6 +60,10 @@ Tgen.applyRefinementForGradientOf("Heat_Release", coef=0.5)
 
 Tgen.setMaximumCellSize(5e-3)
 
+# Near the reactant and product boundaries, set the source terms of H2 and H2O to zero where the
+# absolute value of the source terms is |S| < 0.1.
+Tgen.setSourceTermClamping(species_list=["H2", "H2O"], pv_margin=1e-2, abs_tol=0.1)
+
 # Generate table connectivity and interpolate flamelet data. The diagnostics below draw on the
 # generated table, so unlike in the previous table module they come after this rather than before.
 Tgen.generateTable()
@@ -75,7 +80,7 @@ _show(Tgen.plotTableSlices,
     y_var       = "Temperature",
     slice_cv    = "EnthalpyTot",
     slice_range = None,
-    n_slices    = 10,
+    n_slices    = 20,
     n_x_points  = 600,
     save_path   = _save("T_vs_Z_slices.png"))
 
@@ -85,7 +90,7 @@ _show(Tgen.plotTableSlices,
     y_var       = "Heat_Release",
     slice_cv    = "EnthalpyTot",
     slice_range = None,
-    n_slices    = 10,
+    n_slices    = 20,
     n_x_points  = 600,
     save_path   = _save("HRR_vs_Z_slices.png"))
 
@@ -100,6 +105,12 @@ _show(Tgen.visualizeTableLevel, level_index,
 # Mesh perimiter against the flamelet data it was built from:
 _show(Tgen.visualizeTableLevelPerimiter, level_index,
       save_path=_save("mesh_boundary_data.png"))
+
+# The same, with the data colored by the flamelet type that produced it. The flamelet solutions are
+# read back for this, which takes a minute the first time it is called.
+_show(Tgen.visualizeTableLevelPerimiter, level_index,
+      color_by_flamelet_type=True,
+      save_path=_save("mesh_boundary_flamelet_types.png"))
 
 # 2D colour map of Temperature (no wireframe):
 _show(Tgen.visualizeTableLevel, level_index, "Temperature",
@@ -134,18 +145,15 @@ print("Table level at phi = 0.90:", level_index)
 # 3D surface of Temperature (with wireframe):
 _show(Tgen.visualizeTableLevel, level_index, "Temperature",
       plot_3d=True, show_grid=True, save_path=_save("T_phi090_3d.png"))
+# Production rate of progress variable:
+_show(Tgen.visualizeTableLevel, level_index, "ProdRateTot_PV",
+      plot_3d=False, show_grid=False, save_path=_save("ProdRate_phi090_2d.png"))
+_show(Tgen.visualizeTableLevel, level_index, "ProdRateTot_PV",
+      plot_3d=True, show_grid=False, save_path=_save("ProdRate_phi090_3d.png"))
 
-
-# from 99% of the max progress variable, set the source terms of H2 to zero
-# if the absolute value of the source terms is |S| < 0.1
-Tgen.ClampSourceTerms(species_list=["H2", "H2O"], pv_frac=0.99, abs_tol=0.1)
 
 # Export table in vtk format (view in ParaView).
 Tgen.writeParaviewTable("LUT_paraview")
 
 # Write SU2 .drg table file.
 Tgen.writeSU2Table()
-
-# Keep all figure windows open until the user closes them.
-if SHOW_FIGURES:
-    plt.show()
