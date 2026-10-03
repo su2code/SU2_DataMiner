@@ -683,8 +683,11 @@ class SU2TableGenerator_Base:
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
             self.__printmsg("Saved figure %s" % save_path)
-        if not show:
+        if show:
+            plt.show()
+        if else:
             plt.close(fig)
+           
         return
 
     def _writeAdditionalInfoToTable(self, fid):
