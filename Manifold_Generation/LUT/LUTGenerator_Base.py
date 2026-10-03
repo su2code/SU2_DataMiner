@@ -509,18 +509,16 @@ class SU2TableGenerator_Base:
             self._checkTableLevelIndex(level_index)
 
         table_is_generated = (level_index < len(self._data_in_table)) and (self._data_in_table[level_index] is not None)
-        if not table_is_generated:
-            self._processTableLevels()
-            if self._fluid_data_interpolator is None:
-                self._defineFluidDataInterpolator()
-            self._checkTableLevelIndex(level_index)
-
         if table_is_generated:
             table_nodes = self._table_nodes[level_index]
             connectivity = self._table_connectivity[level_index]
             hull_nodes = self._table_hullnodes[level_index]
             data_level = self._data_in_table[level_index]
         else:
+            self._processTableLevels()
+            if self._fluid_data_interpolator is None:
+                self._defineFluidDataInterpolator()
+            self._checkTableLevelIndex(level_index)
             table_nodes, connectivity, hull_nodes, data_level = self.meshTableLevel(level_index)
 
         if var_to_plot is not None and var_to_plot not in data_level:
