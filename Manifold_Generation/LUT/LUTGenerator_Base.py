@@ -41,7 +41,7 @@ from Manifold_Generation.LUT.MeshTools import Mesh2DPlane
 
 
 class SU2TableGenerator_Base:
-    
+
     _Config:Config = None
     _nDim_table:int=2
     _base_cell_size:float = 2e-2
@@ -112,7 +112,7 @@ class SU2TableGenerator_Base:
         self.setTableAxes(self._Config.GetControllingVariables()[:2], \
                           self._Config.GetControllingVariables()[2] if len(self._Config.GetControllingVariables()) > 2 else None)
         return
-    
+
     def generateTable(self):
         """Initiate the table generation process.
         """
@@ -135,7 +135,7 @@ class SU2TableGenerator_Base:
         corrections their fluid model requires.
         """
         return
-    
+
     def _processTableLevels(self):
         """Prepare table level values depending on the number of dimensions.
 
@@ -143,7 +143,8 @@ class SU2TableGenerator_Base:
         """
         if self._is3D():
             if not any(self._table_levels):
-                if self._tableUpperLevel and self._tableLowerLevel and self._N_table_levels:
+                if (self._tableUpperLevel is not None and self._tableLowerLevel is not None
+                        and self._N_table_levels):
                     self._table_levels = np.linspace(self._tableLowerLevel, self._tableUpperLevel, self._N_table_levels)
                 else:
                     raise Exception("No table level information provided, aborting")
@@ -161,8 +162,8 @@ class SU2TableGenerator_Base:
             self._table_levels = [0]
             self._N_table_levels = 1
         return
-    
-    
+
+
     def _defineFluidDataInterpolator(self):
         """Prepare the interpolation function for evaluating thermochemical states on the table nodes and scale the controlling variables in the state space.
         """
@@ -171,10 +172,10 @@ class SU2TableGenerator_Base:
         cv_data_scaled = self._scaler_controlling_variables.fit_transform(cv_data)
         self._fluid_data_interpolator = fluidDataInterpolator(cv_data_scaled, stateDataFrame, self.__N_nearest_neighbors, self.__inverse_distance_exponent)
         return
-    
+
     def _getFluidDataForInterpolator(self):
         return
-    
+
     def _generateTableLevelData(self):
         """Generate the connectivity for each table level and interpolate the thermochemical state data onto the table nodes.
         """
@@ -195,18 +196,18 @@ class SU2TableGenerator_Base:
         else:
             for iLevel in range(len(self._table_levels)):
                 tableLevel = self.meshTableLevel(iLevel)
-                
+
                 self._table_nodes[iLevel] = tableLevel[0]
                 self._table_connectivity[iLevel] = tableLevel[1]
                 self._table_hullnodes[iLevel] = tableLevel[2]
                 self._data_in_table[iLevel] = tableLevel[3]
         return
-    
+
     def _smoothTableLevelData(self):
         self.__printmsg("Smoothing table data...")
         for iLevel in range(self._N_table_levels):
             cv_level_scaled = self._scaler_controlling_variables.transform(self._table_nodes[iLevel])
-            
+
             data_on_table_level = self._data_in_table[iLevel].values
             smoothener = RBFInterpolator(cv_level_scaled[:, :2], data_on_table_level, kernel="linear",smoothing=self.__smoothingLevel,neighbors=100)
             smoothened_table_data = smoothener(cv_level_scaled[:, :2])
@@ -217,7 +218,7 @@ class SU2TableGenerator_Base:
                     self._data_in_table[iLevel][var] = smoothened_table_data[:, ivar]
         self.__printmsg("Done")
         return
-    
+
     def setTableAxes(self, plane_cv_names:list[str], level_cv_name:str=None):
         """Select which controlling variables span the table. The two plane controlling variables are the
         coordinates of the mesh generated for each table level, the level controlling variable sweeps across
@@ -267,10 +268,10 @@ class SU2TableGenerator_Base:
         """
         if cell_size_coarse <= 0:
             raise Exception("Maximum cell size should be strictly positive.")
-        
+
         self._base_cell_size = cell_size_coarse
         return
-    
+
     def setTargetNodeCount(self, target_node_count:int=3000):
         """Specify a target number of nodes for each table level. The table generator aims to approximate the target number of nodes within 1%.
 
@@ -282,7 +283,7 @@ class SU2TableGenerator_Base:
             raise Exception("Target number of nodes in the table should be strictly positive.")
         self._target_number_of_nodes = target_node_count
         return
-    
+
     def applyRefinementWithin(self, varname:str, lowerbound:float=-np.inf, upperbound:float=np.inf, coef:float=0.5):
         """Specify conditional refinement based on interpolated thermochemical state data. Cell sizes are reduced by a factor "coef" where the table data lies between the specified lower bound and upper bound (inclusive)
 
@@ -298,7 +299,7 @@ class SU2TableGenerator_Base:
         :raises Exception: if lower bound value exceeds upper bound value.
         :raises Exception: if the coefficient value is negative.
         """
-        
+
         if varname not in self._state_quantities:
             raise Exception("%s is not in the list of available thermophysical state variables" % varname)
         if lowerbound > upperbound:
@@ -311,8 +312,8 @@ class SU2TableGenerator_Base:
         self._conditional_upper_bound.append(upperbound)
         self._conditional_refinement_factor.append(coef)
         return
-    
-    
+
+
     def meshTableLevel(self, level_index:int):
         """Discretize and interpolate the fluid data of a single table level.
 
@@ -344,7 +345,7 @@ class SU2TableGenerator_Base:
         mesher.generateMesh()
 
         cvTable, triangles, hullIDs, tableDataFrame = self.__extractTableLevelData(mesher)
-        
+
         if self._is3D():
             self.__printmsg("Finished meshing table level %i at %s=%.2e with %i nodes" % (level_index, \
                                                                                     self._table_cv_names[2], \
@@ -352,7 +353,7 @@ class SU2TableGenerator_Base:
                                                                                     len(cvTable)))
 
         return [cvTable, triangles,hullIDs, tableDataFrame]
-    
+
     def _createPointCloudForTableLevel(self, levelValue:float):
         """Generate a planar point cloud used as a reference for discretizing the table level.
 
@@ -374,7 +375,7 @@ class SU2TableGenerator_Base:
 
     def _initiateMesher(self):
         return Mesh2DPlane()
-    
+
     def _passRefinementOptions(self, mesher:Mesh2DPlane):
         """Transfer table refinement information to 2D meshing algorithm.
 
@@ -384,7 +385,7 @@ class SU2TableGenerator_Base:
             mesher.setTargetNodeCount(self._target_number_of_nodes)
         mesher.setRefinementFunction(self._refinelocation)
         return
-    
+
     def __extractTableLevelData(self, mesher:Mesh2DPlane):
         """Retrieve table level nodes and connectivity from 2D meshing algorithm.
 
@@ -410,9 +411,9 @@ class SU2TableGenerator_Base:
         cvTable = self._scaler_controlling_variables.inverse_transform(cvTable_scaled)
         for iCv, cv in enumerate(self._table_cv_names):
             tableDataFrame[cv] = cvTable[:, iCv]
-        
+
         return cvTable, triangles, hullIDs, tableDataFrame
-    
+
     def _calculateTableStateData(self, cv_table_nodes:np.ndarray[float]):
         """Interpolate fluid thermochemical data onto table nodes.
 
@@ -422,7 +423,7 @@ class SU2TableGenerator_Base:
         :rtype: pd.DataFrame
         """
         return self._fluid_data_interpolator(cv_table_nodes)
-    
+
     def _refinelocation(self, x:float,y:float,z:float):
         """Evaluate refinement coefficient based on interpolated fluid data.
 
@@ -446,7 +447,7 @@ class SU2TableGenerator_Base:
                     if (test_val >= lower) and (test_val <= upper):
                         refinement_factor = min(refinement_factor, c)
         return refinement_factor
-    
+
     def _refinementFactorField(self, plane_nodes:np.ndarray[float]):
         """Evaluate the refinement coefficient of every node at once.
 
@@ -491,7 +492,7 @@ class SU2TableGenerator_Base:
             if cv not in table_vars_in:
                 print("Controlling variable %s should be in table, adding" % cv)
                 self._table_vars.append(cv)
-        
+
         for user_var in table_vars_in:
             if self._checkIfVariableIsValid(user_var):
                 self._table_vars.append(user_var)
@@ -509,11 +510,11 @@ class SU2TableGenerator_Base:
         self._table_vars = self._table_cv_names + \
                            [var for var in self._table_vars if var not in self._table_cv_names]
         return
-    
+
     def _checkIfVariableIsValid(self, var_to_check:str):
         return True
-    
-    
+
+
     def writeParaviewTable(self, filepath_out:str=None):
         """Write the table level information to vtk files.
 
@@ -526,16 +527,16 @@ class SU2TableGenerator_Base:
                 table_level_filename = "%s_%i" % (filepath_out, iLevel)
             else:
                 table_level_filename = filepath_out
-            
+
             cv_table_nodes = self._table_nodes[iLevel]
             cv_nodes_scaled = self._scaler_controlling_variables.transform(cv_table_nodes)
-            
+
             self.__writeParaViewVTK(cv_nodes_scaled, self._data_in_table[iLevel], self._table_connectivity[iLevel], table_level_filename)
         self.__printmsg("Done")
         return
-    
+
     def __writeParaViewVTK(self, cv_coordinates:np.ndarray[float], table_data:pandas.DataFrame, connectivity:np.ndarray[int], file_name_out:str):
-        
+
         pts = np.asarray(cv_coordinates, dtype=float)
         if pts.shape[1] == 2:
             pts = np.column_stack((pts, np.zeros(len(pts))))
@@ -554,7 +555,7 @@ class SU2TableGenerator_Base:
         mesh.write("%s.vtk" % file_name_out)
 
         return
-    
+
     def visualizeTableLevel(self, level_index:int=0, var_to_plot:str=None, plot_3d:bool=False, \
                             show_grid:bool=True, save_path:str=None, show:bool=False):
         """Visualize the mesh of a single table level and optionally colour it with a table variable.
@@ -798,7 +799,7 @@ class SU2TableGenerator_Base:
 
     def _writeAdditionalInfoToTable(self, fid):
         return
-    
+
     def writeSU2Table(self, filepath_out:str=None):
         """Write table information to SU2 drg file.
 
@@ -876,7 +877,7 @@ class SU2TableGenerator_Base:
             Np = np.shape(self._table_nodes[iLevel])[0]
             for iNode in range(Np):
                 line_table_data = "\t".join(["%.14e" % self._data_in_table[iLevel][var][iNode] for var in self._table_vars])
-                
+
                 fid.write(line_table_data + "\n")
             if self._is3D():
                 fid.write("</Level>\n")
@@ -904,7 +905,7 @@ class SU2TableGenerator_Base:
         self.__printmsg("Done")
 
         fid.close()
-    
+
     def setTableLevels(self, level_values:np.ndarray[float]):
         """Specify the level values for 3D tables.
 
@@ -914,7 +915,7 @@ class SU2TableGenerator_Base:
         if self.__optionAppliesFor3D():
             self._table_levels = level_values
         return
-    
+
     def getTableLevels(self):
         """Values of the level controlling variable of each table level. The values are prepared when the
         table is generated, so an empty array is returned before then.
@@ -939,7 +940,7 @@ class SU2TableGenerator_Base:
             self._tableLowerLevel = lower_limit
             self._tableUpperLevel = upper_limit
         return
-    
+
     def setNTableLevels(self, N_levels:int=10):
         """Specify the number of table levels.
 
@@ -952,7 +953,7 @@ class SU2TableGenerator_Base:
                 raise Exception("Number of table levels should be positive")
             self._N_table_levels = N_levels
         return
-    
+
     def insertTableLevel(self, level_value:float):
         """Insert a table level for a specific value.
 
@@ -962,7 +963,7 @@ class SU2TableGenerator_Base:
         if self.__optionAppliesFor3D():
             self._table_level_inserts.append(level_value)
         return
-    
+
     def setNProcessors(self, N_cores:int=2):
         """Specify the number of parallel workers used to generate the table levels in 3D tables.
 
@@ -976,7 +977,7 @@ class SU2TableGenerator_Base:
             self.__run_parallel = True
             self.__N_cores = N_cores
         return
-    
+
     def setNNearestNeighbors(self, N_input:int=6):
         """Specify the number of nearest neighbors used for fluid data interpolation.
 
@@ -988,7 +989,7 @@ class SU2TableGenerator_Base:
             raise Exception("Number of nearest neighbors should be strictly positive")
         self.__N_nearest_neighbors = N_input
         return
-    
+
     def setInverseDistanceExponent(self, p_factor:float=2):
         """Specify the inverse distance exponent used for fluid data interpolation.
 
@@ -1000,7 +1001,7 @@ class SU2TableGenerator_Base:
             raise Exception("Inverse distance parameter value should be positive")
         self.__inverse_distance_exponent = p_factor
         return
-    
+
     def setColorMap(self, colormap:str="viridis"):
         """Set the colormap the table visualization functions colour their data with.
 
@@ -1030,7 +1031,7 @@ class SU2TableGenerator_Base:
         self.__smoothTableData = True
         self.__smoothingLevel = smoothening_factor
         return
-    
+
     def setVerbosity(self, verbosity_level:int=1):
         """Specify verbosity level used to print information in the terminal.
 
@@ -1042,7 +1043,7 @@ class SU2TableGenerator_Base:
             raise Exception("Verbosity level should be between 0 and 4")
         self._verbosity = verbosity_level
         return
-    
+
     def __optionAppliesFor3D(self):
         if self._is2D():
             print("Option does not apply for two-dimensional table, ignoring")
@@ -1055,12 +1056,11 @@ class SU2TableGenerator_Base:
 
     def _is3D(self):
         return self._nDim_table==3
-    
-    
+
+
     def __printmsg(self, msg:str):
         if self._verbosity > 0:
             print(msg)
         return
-    
-    
-    
+
+

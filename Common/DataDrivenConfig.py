@@ -1536,17 +1536,17 @@ class Config_FGM(Config):
 
         if flamelet_type not in FlameletSolverOptions:
             raise Exception("%s is not recognized as a viable flamelet type" % flamelet_type)
-        
+
         if flamelet_type not in self.__flamelet_types:
             self.__flamelet_types.append(flamelet_type)
-        
+
         return
 
     def setFlameletTypes(self, flamelet_types:list[str]):
         self.__flamelet_types = flamelet_types.copy()
         self.__checkFlameletTypes()
         return
-    
+
     def __checkFlameletTypes(self):
         self.__generate_burnerflames = "BURNERFLAME" in self.__flamelet_types
         self.__generate_freeflames = "FREEFLAME" in self.__flamelet_types
@@ -1554,11 +1554,11 @@ class Config_FGM(Config):
         self.__generate_equilibrium = "EQUILIBRIUM" in self.__flamelet_types
         self.__generate_extra_interpolated_burnerflames = "INT_BURNERFLAME" in self.__flamelet_types
         return
-    
+
     def excludeFlameletType(self, flamelet_type:str):
         if flamelet_type not in FlameletSolverOptions:
             raise Exception("%s is not recognized as a viable flamelet type" % flamelet_type)
-        
+
         if flamelet_type in self.__flamelet_types:
             self.__flamelet_types.remove(flamelet_type)
 

@@ -49,7 +49,7 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         self.__datagenerator.SetFDStepSizes(3e-3,3e-3)
         self.__defaultTableVariables()
         return
-    
+
     def __defaultTableVariables(self):
         vars_to_exclude = [EntropicVars.N_STATE_VARS.name]
         if not self._Config.TwoPhase():
@@ -63,7 +63,7 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
                 self._table_vars.append(var.name)
         self._orderTableVarsByAxes()
         return
-    
+
     def setTableVars(self, table_vars_in:list[str]):
         if self._Config.TwoPhase() and EntropicVars.VaporQuality.name in table_vars_in:
             print("Table generator not configured for two-phase, ignoring vapor quality from table data.")
@@ -90,13 +90,13 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         if not valid_vars:
             raise Exception("Some specified thermophysical variables are not supported.")
         return super().setTableVars(table_vars_in)
-    
+
     def _checkIfVariableIsValid(self, var_to_check:str):
         if var_to_check in self._state_quantities:
             return True
         else:
             return False
-    
+
     def _passRefinementOptions(self, mesher:MeshThermodynamicPlane):
         if self._Config.TwoPhase():
             saturation_curve_pts_scaled = self.__calculateSaturationCurvePoints()
@@ -114,15 +114,15 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         rhoe_saturation_curve = np.column_stack((rho_saturation_curve, e_saturation_curve))
         saturation_curve_pts_scaled = self._scaler_controlling_variables.transform(rhoe_saturation_curve)
         return saturation_curve_pts_scaled
-    
+
     def _initiateMesher(self):
         return MeshThermodynamicPlane()
-    
+
     def _getFluidDataForInterpolator(self):
         self.__datagenerator.PreprocessData()
         self.__datagenerator.ComputeData()
         state_data_pointcloud, valid_mask = self.__datagenerator.GetStateData()
-        
+
         state_dataFrame = pd.DataFrame()
         for var in EntropicVars:
             if var.value != EntropicVars.N_STATE_VARS.value:
@@ -131,7 +131,7 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         self.__thermodynamic_data = state_dataFrame
 
         return state_dataFrame
-    
+
     def _createPointCloudForTableLevel(self, levelValue:float):
 
         rhoe_pointcloud = np.column_stack((self.__thermodynamic_data[EntropicVars.Density.name], self.__thermodynamic_data[EntropicVars.Energy.name]))
@@ -139,7 +139,7 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         rhoe_pointcloud_scaled = self._scaler_controlling_variables.transform(rhoe_pointcloud)
         cv_pointcloud = np.column_stack((rhoe_pointcloud_scaled, const_z))
         return cv_pointcloud
-    
+
     def _calculateTableStateData(self, cv_table_nodes:np.ndarray[float]):
         rhoe_table_nodes = self._scaler_controlling_variables.inverse_transform(cv_table_nodes[:, :2])
         state_data_out = np.zeros([len(rhoe_table_nodes), EntropicVars.N_STATE_VARS.value])
@@ -164,7 +164,7 @@ class SU2TableGenerator_NICFD(SU2TableGenerator_Base):
         else:
             fid.write("Table constains single-phase data\n\n")
         return
-    
+
 class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     _Config:Config_FGM = None
     __refineGradients:bool = False
@@ -372,7 +372,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         self._gradient_refinement_factors.append(coef)
         self.__refineGradients = True
         return
-    
+
     def refineEquilibrium(self, coef:float=0.5, margin:float=2e-2):
         """Apply refinement to equilibrium areas of each table level.
 
@@ -386,7 +386,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         self.__equilibrium_refinement_factor = coef
         self.__margin_equilibrium = margin
         return
-    
+
     def setSourceTermClamping(self, species_list:list[str], pv_margin:float=1e-2, abs_tol:float=1e-3):
         """Clamp the source terms of selected species to zero near the reactant and product boundaries.
 
@@ -658,7 +658,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             self._orderTableVarsByAxes()
 
         return self.__flamelet_data
-    
+
     def _processTableLevels(self):
         super()._processTableLevels()
 
@@ -678,13 +678,14 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
                 mixture_fraction = self._Config.gas.mixture_fraction(self._Config.GetFuelString(),self._Config.GetOxidizerString())
             self._table_levels[0] = mixture_fraction
         return
-    
+
     def __spansReactantsToProducts(self):
         """Whether the table plane runs from the reactant to the product state, which is the case when the
         progress variable spans it. Such a plane is bounded by states that are evaluated directly; a plane
         spanned by any other controlling variable is bounded by the flamelet data alone.
         """
-        return self._table_cv_names[0] == DefaultSettings_FGM.name_pv
+        return (self._table_cv_names[0] == DefaultSettings_FGM.name_pv and
+                self._table_cv_names[1] == DefaultSettings_FGM.name_enth)
 
     def __reactantProductBounds(self, levelValue:float):
         """Evaluate the reactant and product states bounding a table level.
@@ -1467,20 +1468,20 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         grads_mag = np.linalg.norm(gradients,axis=0)
         self._gradient_norm_factors = np.max(grads_mag,axis=0)
         return
-    
+
     def _refinelocation(self, x:float,y:float,z:float):
         ref_factor = super()._refinelocation(x,y,z)
-        
+
         if self.__refineGradients:
             ref_factor_grads = self.__applyGradientRefinement(x,y,z)
             ref_factor = min(ref_factor, ref_factor_grads)
-        
+
         if self.__refine_equilibrium:
             ref_factor_equilibrium = self.__applyEquilibriumRefinement(x,y,z)
             ref_factor = min(ref_factor, ref_factor_equilibrium)
 
         return ref_factor
-    
+
     def _passRefinementOptions(self, mesher:Mesh2DPlane):
         super()._passRefinementOptions(mesher)
 
@@ -1547,14 +1548,14 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         for i, f in enumerate(self._gradient_refinement_factors):
             ref_factor = min(ref_factor, max(f, 1.0 - (1 - f)*jac_mag_norm[i]))
         return ref_factor
-    
+
     def __applyEquilibriumRefinement(self, x:float, y:float, z:float):
         ref_factor = 1.0
         if self._is2D():
             if x <= self.__margin_equilibrium or x >= (1-self.__margin_equilibrium):
                 ref_factor = self.__equilibrium_refinement_factor
         return ref_factor
-    
+
     def _writeAdditionalInfoToTable(self, fid):
         fid.write("Fuel:\n")
         fid.write(",".join(["%.2f:%s" % (w, sp) for w, sp in zip(self._Config.GetFuelWeights(), self._Config.GetFuelDefinition())]))
