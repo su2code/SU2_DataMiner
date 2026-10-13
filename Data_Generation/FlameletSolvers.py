@@ -154,8 +154,7 @@ class FlameletSolver_Cantera:
 
         self.loadSolution(existing_file)
 
-        # Solution files are only written for converged, burning flamelets, so a
-        # stored solution counts as a successful point of the sweep.
+        # Solution files exist only for converged, burning flamelets.
         self._converged_solution = True
         self._flamelet_is_burning = True
         self._updateStateFromSolution()
@@ -644,10 +643,7 @@ class FlameletSolver_Cantera:
 
         initialGuessData = self._prepareInitialGuessData()
         try:
-            # Restarting from a solution array avoids the ambiguous truth test
-            # that a data frame runs into in some of the Cantera flame classes.
-            # Older Cantera versions cannot build one from a data frame, in which
-            # case the data frame is passed on as it is.
+            # Restart from a solution array; older Cantera cannot build one from a data frame.
             restartData = ct.SolutionArray(self._canteraSolution)
             restartData.from_pandas(initialGuessData)
         except Exception:
@@ -658,8 +654,6 @@ class FlameletSolver_Cantera:
         except Exception as cantera_message:
             print("Cantera reported \"%s\" while initializing the flamelet solution from stored data." % cantera_message)
 
-        # The loaded solution takes the place of a computed one: it is the
-        # flamelet solution that subsequent solutions restart from.
         self._flameletSolutionForRestart = self._flameletSolution
 
         return
@@ -871,8 +865,7 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
     def _prepareSettingRange(self):
         super()._prepareSettingRange()
 
-        # Without an adiabatic flame to anchor on, every mass flux of the sweep would be zero. The
-        # sweep is skipped so that the remaining flamelet types, and the remaining mixtures, carry on.
+        # Without an adiabatic flame every mass flux would be zero, so the sweep is skipped.
         if not self.__adiabatic_massflow:
             print("No adiabatic flame at mixture status %.4f, skipping burner-stabilized flames" \
                   % self._reactant_mixture_status)
@@ -891,9 +884,7 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
         if not self.__iterate_enthalpy():
             return
 
-        # The mass flux step is adapted towards a target enthalpy step, which needs the enthalpy of
-        # the solution just obtained. A flamelet that did not converge leaves the previous solution
-        # in place, so the step is left as it is rather than adapted against a stale enthalpy.
+        # A flamelet that did not converge leaves the previous solution, so the step is not adapted.
         if self.isConverged() and (self._thermochemical_solution is not None):
             enth_current = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
             if self.__enth_prev is not None:
@@ -1220,8 +1211,7 @@ class CooledFlameInterpolator(FlameletSolver_Cantera):
     def _prepareSettingRange(self):
         super()._prepareSettingRange()
 
-        # There is nothing to interpolate from when the mixture produced no burner-stabilized flame,
-        # which is the case for a mixture that sustains no adiabatic flame to anchor that sweep on.
+        # A mixture that sustains no adiabatic flame produced no burner-stabilized flame to interpolate from.
         if (self.__burnerFlameSolution is None) or (self.__equilibriumSolution is None):
             print("No burner-stabilized flame at mixture status %.4f, skipping interpolated flames" \
                   % self._reactant_mixture_status)
@@ -1247,9 +1237,7 @@ class CooledFlameInterpolator(FlameletSolver_Cantera):
 
         linear_interpolation = w_a_lin * self.__burnerFlameSolution.values + ratio * self.__equilibriumSolution.values[iMin]
 
-        # Heat release and source terms follow the exponential weights, the remaining quantities the linear
-        # ones. Selecting per column and building the solution in one go keeps the data frame contiguous;
-        # inserting the columns one by one leaves it fragmented across hundreds of blocks.
+        # Build the solution in one go, as inserting columns one by one fragments the data frame.
         variable_names = list(self.__burnerFlameSolution.keys())
         interpolate_exponentially = np.array([(var == FGMVars.Heat_Release.name) or ("Y_dot" in var) \
                                               for var in variable_names])
@@ -1374,9 +1362,7 @@ class CounterFlowDiffusionFlameSolver(FlameletSolver_Cantera):
 
         self._flameletSolution.fuel_inlet.T = self._T_reactants
         self._flameletSolution.fuel_inlet.mdot = self.__fuel_density * self.__fuel_velocity
-        # Mole basis: the fuel/oxidizer definition strings are interpreted as mole
-        # fractions everywhere else (set_mixture_fraction, ComputeMixFracConstants),
-        # so setting these inlets by mass would shift the mixture fraction off [0, 1].
+        # Mole basis, as the fuel and oxidizer strings are mole fractions elsewhere.
         self._flameletSolution.fuel_inlet.X = self._Config.GetFuelString()
 
         self._flameletSolution.oxidizer_inlet.T = self._T_reactants
@@ -1416,8 +1402,7 @@ class CounterFlowDiffusionFlameSolver(FlameletSolver_Cantera):
     
     def _writeInflowSettings(self):
         super()._writeInflowSettings()
-        # Assigning these one by one inserts into an already wide frame, which pandas
-        # flags as fragmenting; concatenate them in a single block instead.
+        # Concatenate in a single block, as inserting columns into a wide frame fragments it.
         n_grid_points = self._thermochemical_solution.shape[0]
         strain_df = pd.DataFrame()
         strain_df["StrainRate"] = self.__strain_rate*np.ones(n_grid_points)

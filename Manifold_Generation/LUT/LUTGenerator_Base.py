@@ -92,9 +92,7 @@ class SU2TableGenerator_Base:
         """
         self._Config = copy(config_in)
 
-        # Attributes that are appended to, or that carry fitted state, are bound to the instance
-        # here. Left as class attributes they are shared by every generator in the process, so a
-        # second generator would inherit the settings of the first.
+        # Mutable and fitted attributes are bound to the instance, not shared through the class.
         self._scaler_controlling_variables = MinMaxScaler()
         self._table_vars = []
         self._table_nodes = []
@@ -125,8 +123,7 @@ class SU2TableGenerator_Base:
         if self.__smoothTableData:
             self._smoothTableLevelData()
 
-        # Post-processing runs last, so that it constrains the data the table is written from rather
-        # than data that smoothing still alters afterwards.
+        # Post-processing runs last so it constrains the final table data.
         self._postProcessTableData()
         return
 
@@ -211,8 +208,7 @@ class SU2TableGenerator_Base:
             data_on_table_level = self._data_in_table[iLevel].values
             smoothener = RBFInterpolator(cv_level_scaled[:, :2], data_on_table_level, kernel="linear",smoothing=self.__smoothingLevel,neighbors=100)
             smoothened_table_data = smoothener(cv_level_scaled[:, :2])
-            # The table axes hold the exact node coordinates and are never smoothed. Any other
-            # controlling variable is an interpolated table variable like the rest.
+            # Table axes hold exact node coordinates and are never smoothed.
             for ivar, var in enumerate(list(self._data_in_table[iLevel].keys())):
                 if var not in self._table_cv_names:
                     self._data_in_table[iLevel][var] = smoothened_table_data[:, ivar]
@@ -220,13 +216,7 @@ class SU2TableGenerator_Base:
         return
 
     def setTableAxes(self, plane_cv_names:list[str], level_cv_name:str=None):
-        """Select which controlling variables span the table. The two plane controlling variables are the
-        coordinates of the mesh generated for each table level, the level controlling variable sweeps across
-        table levels. Omitting the level controlling variable yields a single, two-dimensional table, even when
-        the manifold is described by more controlling variables; the remaining controlling variables are then
-        interpolated onto the table as ordinary state variables.
-
-        By default the table is spanned by the controlling variables of the configuration in their own order.
+        """Select the controlling variables that span the table: two plane variables for the mesh of each level and an optional level variable. Omitting the level variable yields a 2D table.
 
         :param plane_cv_names: the two controlling variables spanning each table level.
         :type plane_cv_names: list[str]
@@ -449,12 +439,7 @@ class SU2TableGenerator_Base:
         return refinement_factor
 
     def _refinementFactorField(self, plane_nodes:np.ndarray[float]):
-        """Evaluate the refinement coefficient of every node at once.
-
-        Same quantity as _refinelocation, evaluated for a whole set of nodes rather than for one.
-        The mesher samples the refinement densely, and going through the interpolator one node at a
-        time costs far more in call overhead than in the lookup itself, so the field is evaluated in
-        one batch and handed to the mesher instead.
+        """Evaluate the refinement coefficient of every node in one batch.
 
         :param plane_nodes: table plane coordinates to evaluate, one node per row.
         :type plane_nodes: np.ndarray[float]
@@ -484,8 +469,7 @@ class SU2TableGenerator_Base:
         :type table_vars_in: list[str]
         :raises Exception: if unsupported variables are included.
         """
-        # The manifold is defined in terms of all controlling variables, so all of them belong in the
-        # table whether or not they span it.
+        # All controlling variables belong in the table, whether or not they span it.
         controlling_variables = self._Config.GetControllingVariables()
         self._table_vars = []
         for cv in controlling_variables:
@@ -503,9 +487,7 @@ class SU2TableGenerator_Base:
         return
 
     def _orderTableVarsByAxes(self):
-        """Move the table axes to the front of the table variables. SU2 resolves them by name, so this
-        is not what makes the table readable, but it keeps the variable order of the table file aligned
-        with the coordinates its nodes are given in.
+        """Move the table axes to the front of the table variables.
         """
         self._table_vars = self._table_cv_names + \
                            [var for var in self._table_vars if var not in self._table_cv_names]
@@ -558,11 +540,7 @@ class SU2TableGenerator_Base:
 
     def visualizeTableLevel(self, level_index:int=0, var_to_plot:str=None, plot_3d:bool=False, \
                             show_grid:bool=True, save_path:str=None, show:bool=False):
-        """Visualize the mesh of a single table level and optionally colour it with a table variable.
-
-        When the table data have not been generated yet, the requested level is meshed on the fly,
-        which allows the mesh quality and refinement settings to be inspected before committing to
-        the full table.
+        """Visualize the mesh of a single table level, optionally coloured by a table variable. Levels not yet generated are meshed on the fly.
 
         :param level_index: index of the table level to visualize, defaults to 0
         :type level_index: int, optional
@@ -580,8 +558,6 @@ class SU2TableGenerator_Base:
         :raises Exception: if the table level index is out of range.
         :raises Exception: if the variable to plot is not part of the table data.
         """
-        # The index is checked against the levels that are known, so that meshing is not
-        # started for a level that does not exist.
         if self._N_table_levels is not None:
             self._checkTableLevelIndex(level_index)
 
@@ -678,9 +654,7 @@ class SU2TableGenerator_Base:
 
     def plotTableSlices(self, x_cv:str, y_var:str, slice_cv:str, slice_range:tuple=None, n_slices:int=10, \
                         n_x_points:int=200, level_value:float=None, save_path:str=None, show:bool=False):
-        """Plot a fluid state variable against one controlling variable for a number of fixed values of
-        another controlling variable, evaluated with the fluid data interpolator. Such plots reveal
-        whether the interpolated manifold is smooth and free of jumps before the table is written.
+        """Plot a state variable against one controlling variable for fixed values of another, evaluated with the fluid data interpolator.
 
         :param x_cv: controlling variable along the horizontal axis.
         :type x_cv: str
@@ -731,8 +705,7 @@ class SU2TableGenerator_Base:
         x_values = np.linspace(cv_min[x_index], cv_max[x_index], n_x_points)
         slice_values = np.linspace(slice_min, slice_max, n_slices)
 
-        # Query points of a three-dimensional table are taken at a single value of the third
-        # controlling variable, which is the one that is neither plotted nor sliced.
+        # Query points of a 3D table are taken at one value of the unplotted controlling variable.
         cv_query = np.zeros([n_x_points, self._nDim_table])
         if self._is3D():
             third_index = ({0, 1, 2} - {x_index, slice_index}).pop()
@@ -814,9 +787,7 @@ class SU2TableGenerator_Base:
 
         self.__printmsg("Writing LUT file with name %s" % file_out)
 
-        # SU2 resolves the table axes by name against the variable names of the file, so a table
-        # spanned by anything other than the configuration controlling variables is only usable
-        # when those names are known. They are recorded here, and their absence is an error.
+        # SU2 resolves table axes by name, so the names of non-default axes are recorded.
         for cv in self._table_cv_names:
             if cv not in self._table_vars:
                 raise Exception("Table axis %s is not among the table variables, the table file would be unusable" % cv)
@@ -829,8 +800,7 @@ class SU2TableGenerator_Base:
         else:
             fid.write("[Version]\n1.1.0\n\n")
 
-        # An unrecognized header tag is skipped by the SU2 table reader, so this is informative
-        # only: it names the controlling variables to select in the SU2 configuration.
+        # Unrecognized header tags are skipped by SU2; this names the controlling variables to select.
         fid.write("[Table axes]\n")
         fid.write("\n".join(self._table_cv_names))
         fid.write("\n\n")

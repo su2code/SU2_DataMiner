@@ -351,8 +351,7 @@ def polylineIntersection(polyline_a:np.ndarray[float], polyline_b:np.ndarray[flo
                 - direction_a[:, None, 1]*direction_b[None, :, 0]
     offset = start_b[None, :, :] - start_a[:, None, :]
 
-    # Parallel segments divide by a vanishing determinant; the crossing test below rejects the
-    # resulting non-finite positions, so only the warning has to be suppressed.
+    # Parallel segments divide by zero; non-finite crossings are rejected below.
     with np.errstate(divide="ignore", invalid="ignore"):
         along_a = (offset[:, :, 0]*direction_b[None, :, 1] - offset[:, :, 1]*direction_b[None, :, 0])/determinant
         along_b = (offset[:, :, 0]*direction_a[:, None, 1] - offset[:, :, 1]*direction_a[:, None, 0])/determinant
@@ -362,7 +361,6 @@ def polylineIntersection(polyline_a:np.ndarray[float], polyline_b:np.ndarray[flo
     if not np.any(crosses):
         return None
 
-    # Crossings are listed by segment of the first polyline and then of the second, so the last
-    # one is the crossing furthest along both.
+    # The last crossing is the one furthest along both polylines.
     iSegment, jSegment = np.argwhere(crosses)[-1]
     return start_a[iSegment] + along_a[iSegment, jSegment]*direction_a[iSegment], iSegment, jSegment

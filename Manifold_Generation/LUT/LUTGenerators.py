@@ -197,9 +197,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     __simplification_tolerance:float = DefaultSettings_FGM.table_boundary_simplification_tolerance
     __merge_tolerance:float = DefaultSettings_FGM.table_boundary_merge_tolerance
 
-    # A branch needs a station at either end and at least one in between: fewer than that cannot describe
-    # a curve, so a sweep yielding fewer populated bins does not produce a branch, and a bin count below
-    # this cannot be configured.
+    # Minimum number of stations needed to describe a branch as a curve.
     __min_envelope_stations:int = 3
 
     # A polygon is closed by three points, which is what the perimiter has to retain.
@@ -208,12 +206,10 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     # Below this a table level holds no plane to bound.
     __min_flamelet_data_points:int = 3
 
-    # Inserting a station only changes the two segments meeting at it, so the outstanding violations
-    # shrink quickly; this bounds the work when a branch is pathological.
+    # Bounds the number of stations inserted into a pathological branch.
     __max_enclosure_passes:int = 8
 
-    # Rounds of simplifying and re-enclosing a branch. The second round collapses what the first round
-    # had to insert; further rounds change little.
+    # Rounds of simplifying and re-enclosing a branch.
     __branch_refinement_rounds:int = 2
 
     # Rounds of raising or lowering the control points of a fitted edge onto the data.
@@ -256,9 +252,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def setBoundaryBinCount(self, N_bins:int=DefaultSettings_FGM.table_boundary_bins):
-        """Specify the number of bins along the progress variable used to extract the data envelope bounding
-        each table level. Higher values follow the flamelet data more closely, at the cost of a perimiter that
-        is more sensitive to the discrete spacing between flamelets.
+        """Specify the number of bins along the progress variable used to extract the data envelope bounding each table level.
 
         :param N_bins: number of bins, defaults to DefaultSettings_FGM.table_boundary_bins
         :type N_bins: int, optional
@@ -271,14 +265,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def setBoundaryTransverseBinCount(self, N_bins:int=DefaultSettings_FGM.table_boundary_transverse_bins):
-        """Specify the number of bins along the enthalpy used to extract the equilibrium boundary at maximum
-        progress variable.
-
-        That boundary is the locus of the equilibrium composition, which shifts with enthalpy. It runs almost
-        parallel to the enthalpy axis, so a sweep along the progress variable places it entirely within its
-        last few bins and cannot resolve it; sweeping along the enthalpy instead resolves it directly. Bins
-        along the enthalpy run parallel to the flamelets, so this count should stay low enough for every bin to
-        collect several flamelets.
+        """Specify the number of bins along the enthalpy used to extract the equilibrium boundary at maximum progress variable.
 
         :param N_bins: number of bins, defaults to DefaultSettings_FGM.table_boundary_transverse_bins
         :type N_bins: int, optional
@@ -291,9 +278,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def setBoundaryMinPointsPerBin(self, N_points:int=DefaultSettings_FGM.table_boundary_min_points_per_bin):
-        """Specify how many flamelet data points a bin should hold to contribute a station to the envelope.
-        Bins collecting only the tail of a single flamelet are not representative of the boundary, so raising
-        this discards more of them, at the cost of shortening the envelope where the data thins out.
+        """Specify the minimum number of flamelet data points a bin needs to contribute a station to the envelope.
 
         :param N_points: minimum number of data points per bin, defaults to
             DefaultSettings_FGM.table_boundary_min_points_per_bin
@@ -307,10 +292,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def setBoundaryLevelBandwidth(self, bandwidth:float=DefaultSettings_FGM.table_boundary_level_bandwidth):
-        """Specify the band of flamelet data around a table level that shapes its envelope, in table level
-        spacings. Only three-dimensional tables draw on a band; a two-dimensional table is built from the
-        whole manifold. Widening the band draws in flamelets further from the level, which smooths the
-        envelope but blurs the variation of the boundary across levels.
+        """Specify the half-width, in table level spacings, of the band of flamelet data that shapes the envelope of a 3D table level.
 
         :param bandwidth: half-width of the band in table level spacings, defaults to
             DefaultSettings_FGM.table_boundary_level_bandwidth
@@ -324,9 +306,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def setBoundarySimplificationTolerance(self, tolerance:float=DefaultSettings_FGM.table_boundary_simplification_tolerance):
-        """Specify how far the perimiter may depart from the envelope stations it replaces, as a fraction of
-        the coarse cell size. Simplification collapses the steps left by the discrete spacing between
-        flamelets into straight segments; a tolerance of zero retains every station.
+        """Specify the maximum departure of the perimiter from the envelope stations it replaces, as a fraction of the coarse cell size.
 
         :param tolerance: simplification tolerance as a fraction of the coarse cell size, defaults to
             DefaultSettings_FGM.table_boundary_simplification_tolerance
@@ -388,18 +368,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def setSourceTermClamping(self, species_list:list[str], pv_margin:float=1e-2, abs_tol:float=1e-3):
-        """Clamp the source terms of selected species to zero near the reactant and product boundaries.
-
-        SU2 evaluates a species source as ``source_prod + source_cons * y_aux``, so production terms are
-        clipped to be non-negative and consumption terms non-positive over the whole table. Within a margin
-        of the reactant and of the product progress variable the net, positive and negative source terms
-        (``Y_dot_net-<sp>``, ``Y_dot_pos-<sp>``, ``Y_dot_neg-<sp>``) are additionally set to zero where
-        their absolute value is below ``abs_tol``, as neither boundary sustains reaction.
-
-        Clamping the reactant side leaves burner-stabilized flamelets untouched, since their inflow
-        progress variable exceeds the reactant progress variable.
-
-        The clamp is applied during :meth:`generateTable` and may be configured at any point before it.
+        """Set the source terms of selected species to zero near the reactant and product boundaries where their magnitude is below a tolerance. The clamp is applied during :meth:`generateTable`.
 
         :param species_list: species names to clamp (e.g. ``['CO', 'H2']``).
         :type species_list: list[str]
@@ -446,12 +415,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return vars_net, vars_pos, vars_neg
 
     def __progressVariableExtent(self, levelValue:float, pv_nodes:np.ndarray[float]):
-        """Reactant and product progress variable bounding a table level.
-
-        A plane spanned by the progress variable runs between the reactant and product states, which are
-        evaluated directly. Any other plane is bounded by the flamelet data alone, so its extremes stand
-        in for those states. When the progress variable sweeps the table levels instead of spanning the
-        plane it is constant within a level, so those extremes are taken over all levels.
+        """Reactant and product progress variable bounding a table level, taken from the flamelet data when the plane is not spanned by the progress variable.
 
         :return: reactant and product progress variable.
         :rtype: tuple[float]
@@ -487,8 +451,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if len(vars_to_clamp) == 0:
             return
 
-        # The progress variable is constant within a level when it sweeps the levels, so its extent is
-        # taken over the whole table instead.
+        # The progress variable is constant within a level, so its extent is taken over the whole table.
         self.__pv_extent_over_levels = None
         if self._is3D() and (self._table_cv_names[-1] == name_pv):
             pv_over_levels = [data_level[name_pv].to_numpy(dtype=float) for data_level in self._data_in_table]
@@ -523,12 +486,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
     def visualizeTableLevelPerimiter(self, level_index:int=0, detail_fraction:float=0.05, \
                                      color_by_flamelet_type:bool=False, save_path:str=None, show:bool=False):
-        """Visualize the mesh of a table level and its perimiter against the flamelet data the perimiter
-        was extracted from. Data outside the perimiter is data the table discards, while a perimiter
-        enclosing no data marks a region the table extrapolates into.
-
-        The figure pairs the full table level with a detail at mid-domain, where the individual cells,
-        perimiter edges and data points are separable; at table resolution they overlap into solid colour.
+        """Visualize the mesh and perimiter of a table level against the flamelet data the perimiter was extracted from, with a detail at mid-domain.
 
         :param level_index: index of the table level to visualize, defaults to 0
         :type level_index: int, optional
@@ -554,16 +512,14 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         level_data = self.getFlameletDataForTableLevel(level_value)
         data_per_type = self.getFlameletDataByTypeForTableLevel(level_value) if color_by_flamelet_type else {}
 
-        # Whether a flamelet data point is covered by the table follows from the cells themselves rather
-        # than from the perimiter, which needs no ordering and accounts for any hole in the mesh.
+        # Coverage follows from the cells themselves, so holes in the mesh are accounted for.
         covered_by_table = None
         if level_data is not None:
             cell_finder = mtri.Triangulation(level_nodes[:, 0], level_nodes[:, 1], level_cells).get_trifinder()
             covered_by_table = cell_finder(level_data[:, 0], level_data[:, 1]) >= 0
             self._reportTableLevelCoverage(level_index, level_nodes, level_cells, covered_by_table)
 
-        # An edge shared by a single cell lies on the perimiter of the mesh. The perimiter node indices are
-        # not ordered along the perimiter, so the edges are collected from the connectivity instead.
+        # Edges shared by a single cell form the perimiter; perimiter nodes are not ordered.
         edges = np.sort(np.vstack((level_cells[:, [0, 1]], \
                                    level_cells[:, [1, 2]], \
                                    level_cells[:, [2, 0]])), axis=1)
@@ -648,8 +604,6 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def _getFluidDataForInterpolator(self):
-        # The manifold is read once and kept: the generator needs it on construction to know which
-        # quantities exist, and again when the interpolator is built.
         if self.__flamelet_data is None:
             flamelet_data_filename = os.sep.join((self._Config.GetOutputDir(), self._Config.GetConcatenationFileHeader()+"_full.csv"))
             self.__flamelet_data = pd.read_csv(flamelet_data_filename)
@@ -663,8 +617,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         super()._processTableLevels()
 
         if not self.__spansReactantsToProducts():
-            # A plane not spanned by the progress variable has no reactant and product state to bound it, so
-            # its extent follows the flamelet data. That data describes one manifold, not a sweep of levels.
+            # A plane not spanned by the progress variable is bounded by the flamelet data alone.
             if self._is3D():
                 raise Exception("Table levels require a table plane spanned by %s." % DefaultSettings_FGM.name_pv)
             return
@@ -680,9 +633,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return
 
     def __spansReactantsToProducts(self):
-        """Whether the table plane runs from the reactant to the product state, which is the case when the
-        progress variable spans it. Such a plane is bounded by states that are evaluated directly; a plane
-        spanned by any other controlling variable is bounded by the flamelet data alone.
+        """Whether the progress variable spans the table plane, so that it runs from the reactant to the product state.
         """
         return (self._table_cv_names[0] == DefaultSettings_FGM.name_pv and
                 self._table_cv_names[1] == DefaultSettings_FGM.name_enth)
@@ -731,13 +682,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
     def __fittedEdge(self, planar_data:np.ndarray[float], h_lower:float, h_upper:float, bounds_from_below:bool, \
                      anchor_lower:float=None, anchor_upper:float=None):
-        """Fit a smooth edge to the extreme of the flamelet data over a range of enthalpy.
-
-        The edge is single valued in enthalpy, so it is swept along it. Each bin contributes the
-        extreme data point it holds, a shape preserving interpolant is fitted through a subset of
-        those, and its control points are then raised or lowered until the edge bounds the data.
-        Correcting the control points individually keeps a single distant point from displacing the
-        whole edge.
+        """Fit a smooth edge, single valued in enthalpy, that bounds the extreme of the flamelet data over a range of enthalpy.
 
         :param planar_data: table plane coordinates of the flamelet data.
         :type planar_data: np.ndarray[float]
@@ -771,7 +716,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             return None
 
         station_h, station_pv = np.array(station_h), np.array(station_pv)
-        # The ends of the edge reach the extremes of the data rather than the last populated bin.
+        # The ends of the edge reach the extremes of the data.
         station_h[0], station_h[-1] = h_lower, h_upper
 
         control = np.unique(np.linspace(0, len(station_h) - 1, \
@@ -786,8 +731,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
         quantile = 100*DefaultSettings_FGM.table_boundary_data_quantile
 
-        # A control point governs the data nearest to it in enthalpy. The fit moves the control
-        # points across the progress variable only, so that grouping holds for every round.
+        # A control point governs the data nearest to it in enthalpy.
         nearest_control = np.argmin(np.absolute(h_data[:, np.newaxis] - control_h[np.newaxis, :]), axis=1)
         governed_by = [np.flatnonzero(nearest_control == iControl) for iControl in range(len(control_h))]
 
@@ -836,11 +780,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return perimiter
 
     def __rightConvexChain(self, planar_data:np.ndarray[float], start:np.ndarray[float], end:np.ndarray[float]):
-        """Chain of straight segments from start to end that bounds the data towards higher progress
-        variable and turns one way only.
-
-        The equilibrium side of a table plane is convex, so a convex chain follows it without the
-        overshoot an interpolant through scattered extremes would introduce.
+        """Chain of straight segments from start to end that bounds the data towards higher progress variable and turns one way only.
 
         :param planar_data: table plane coordinates of the flamelet data.
         :type planar_data: np.ndarray[float]
@@ -869,13 +809,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return np.array(chain)
 
     def __parametricBoundary(self, levelValue:float):
-        """Perimiter of a table plane that runs from the reactant to the product state.
-
-        The plane is a rough triangle: the reactants sit at a single progress variable, the burnt
-        products on the equilibrium side, and the two meet in a point at the coldest state. It is
-        closed at the top by a straight line at the enthalpy of the hottest reactant state. The
-        reactant line and the corner at which it meets the burner-stabilized edge carry the unburnt
-        state, so both are exact.
+        """Perimiter of a table plane that runs from the reactant to the product state, closed at the top at the enthalpy of the hottest reactants.
 
         :param levelValue: value of the table level.
         :type levelValue: float
@@ -894,8 +828,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         # The reactants sit at one progress variable, which the data gives exactly.
         pv_reactants = pv_data.min()
 
-        # The plane is closed at the hottest reactant state, so that the top runs at one enthalpy from
-        # the reactant line to the products. Data above it is a sliver that the table leaves out.
+        # The plane is closed at the hottest reactant state; data above it is left out.
         on_reactant_line = pv_data <= pv_reactants + self.__corner_data_fraction*np.ptp(pv_data)
         h_top = h_data[on_reactant_line].max()
 
@@ -919,16 +852,12 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if burner_edge is None:
             return None
 
-        # From the coldest state up the equilibrium side, across the top, down the reactant line,
-        # then back down the burner-stabilized side to the same point it started from.
+        # Traverse from the coldest state up the equilibrium side, across the top and back down.
         perimiter = np.vstack((equilibrium_edge, [corner_left], [[pv_reactants, h_corner]], burner_edge[::-1]))
         return self.__checkPerimiter(self.__mergeCoincidentPolylinePoints(perimiter))
 
     def getManifoldRange(self, varname:str):
         """Extent of a quantity over the flamelet data the manifold is described by.
-
-        Useful for placing the table on the data rather than on values chosen in advance, for instance
-        to span the table levels over the mixture fractions that were actually generated.
 
         :param varname: name of the manifold quantity.
         :type varname: str
@@ -944,8 +873,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return float(np.min(values)), float(np.max(values))
 
     def __levelBandwidth(self):
-        """Half width in the level controlling variable of the band of flamelet data a table level is
-        built from, or None when the table holds a single level that all data belongs to.
+        """Half width in the level controlling variable of the band of flamelet data a table level is built from, or None for a single level.
         """
         if not (self._is3D() and len(self._table_levels) > 1):
             return None
@@ -956,10 +884,6 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
     def __readFlameletDataPerType(self):
         """Read the controlling variables of every flamelet solution, kept apart per flamelet type.
-
-        The concatenated manifold does not record which solver produced a data point, so the flamelet
-        solutions themselves are read back. Only the columns the controlling variables follow from are
-        read, which keeps the sweep over all solutions to seconds rather than minutes.
         """
         pv_columns = ["Y-%s" % species for species in self._Config.GetProgressVariableSpecies()]
         stored_cvs = [cv for cv in self._table_cv_names if cv != DefaultSettings_FGM.name_pv]
@@ -982,9 +906,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return data_per_type
 
     def getFlameletDataByTypeForTableLevel(self, levelValue:float):
-        """Retrieve the flamelet data a table level is constructed from, split by the flamelet type it
-        was produced by. The selection is the one getFlameletDataForTableLevel makes, so the two describe
-        the same data.
+        """Retrieve the flamelet data a table level is constructed from, split by flamelet type.
 
         :param levelValue: value of the table level.
         :type levelValue: float
@@ -1004,9 +926,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return data_per_type
 
     def getFlameletDataForTableLevel(self, levelValue:float):
-        """Retrieve the flamelet data a table level is constructed from, in controlling variable values. For a
-        three-dimensional table this is the band of flamelets around the level rather than the whole manifold,
-        so this is the data that shaped the perimiter of that particular level.
+        """Retrieve the flamelet data a table level is constructed from, in controlling variable values.
 
         :param levelValue: value of the table level.
         :type levelValue: float
@@ -1037,18 +957,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return self.__scalePlanarCoords(cv_data)[:, :2]
 
     def __envelopeForTableLevel(self, levelValue:float):
-        """Bound the flamelet data of a table level by three branches.
-
-        The flamelet data of a table level is a family of curves that are discretely spaced in enthalpy. Tracing
-        a hull along the data points would therefore cut into the gaps between neighbouring flamelets. Binning
-        the data along the progress variable instead is transverse to those curves, so the resulting envelope
-        follows the extremes of the data without resolving the spacing between individual flamelets. That sweep
-        yields the lower and upper enthalpy branches, which bound the burner-stabilized limit and the maximum
-        enthalpy.
-
-        The boundary at maximum progress variable is the locus of the equilibrium composition, which shifts with
-        enthalpy and runs almost parallel to the enthalpy axis; a progress variable sweep confines it to its last
-        few bins, so it is swept along the enthalpy instead.
+        """Bound the flamelet data of a table level by three branches: lower and upper enthalpy branches from a progress variable sweep, and an equilibrium branch from an enthalpy sweep.
 
         :param levelValue: value of the table level.
         :type levelValue: float
@@ -1059,7 +968,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if levelValue in self.__envelope_cache:
             return self.__envelope_cache[levelValue]
 
-        # Cache the absence of an envelope as well, so a level without flamelet data is evaluated only once.
+        # Cache the absence of an envelope too.
         self.__envelope_cache[levelValue] = None
 
         planar_data = self.__flameletDataForTableLevel(levelValue)
@@ -1070,8 +979,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         pv_data = planar_data[:, 0]
         h_data = planar_data[:, 1]
 
-        # Sweeping the progress variable yields both enthalpy branches at once, as the lowest and the
-        # highest data point of each bin.
+        # Sweeping the progress variable yields both enthalpy branches as lowest and highest data point per bin.
         along_pv = self.__sweepEnvelope(pv_data, h_data, self.__N_boundary_bins)
         if along_pv is None:
             return None
@@ -1086,8 +994,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
                     "upper": np.column_stack((pv_upper, h_upper)),
                     "equilibrium": None}
 
-        # The equilibrium branch is swept along the enthalpy, so its stations are enthalpies and the
-        # extreme it bounds is a progress variable. Only the highest of each bin is of interest.
+        # The equilibrium branch is swept along enthalpy; only the highest progress variable per bin is kept.
         along_h = self.__sweepEnvelope(h_data, pv_data, self.__N_transverse_bins)
         if along_h is not None:
             _, (h_at_highest_pv, highest_pv) = along_h
@@ -1100,12 +1007,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
     def __envelopeBranch(self, stations:np.ndarray[float], extremes:np.ndarray[float], \
                          data_along:np.ndarray[float], data_across:np.ndarray[float], encloses_from_below:bool):
-        """Turn the extremes collected by a sweep into the stations of one envelope branch.
-
-        A branch is first reduced to the stations needed to describe it, and then given back whatever
-        stations that reduction, or the sampling itself, left data outside of. Enclosure is therefore
-        settled against the flamelet data rather than against a bin width, so the result does not shift
-        with the number of bins.
+        """Turn the extremes collected by a sweep into the stations of one envelope branch that encloses all flamelet data.
 
         :param stations: coordinate of the extreme data point collected in each bin.
         :type stations: np.ndarray[float]
@@ -1120,9 +1022,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :return: the stations of the branch and the branch value at each of them.
         :rtype: tuple[np.ndarray[float]]
         """
-        # Simplifying drops stations, which can leave data outside; enclosing inserts stations, which
-        # leaves the branch more detailed than it needs to be. Alternating settles on a branch that is
-        # both, and ending on the enclosing pass is what makes the result binding.
+        # Simplifying can leave data outside, so the last pass encloses.
         for _ in range(self.__branch_refinement_rounds):
             retained = self.__simplifyEnvelope(stations, extremes, encloses_from_below)
             stations, extremes = self.__encloseData(stations[retained], extremes[retained], \
@@ -1131,12 +1031,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
     def __encloseData(self, stations:np.ndarray[float], values:np.ndarray[float], \
                       data_along:np.ndarray[float], data_across:np.ndarray[float], encloses_from_below:bool):
-        """Extend a branch onto every data point it leaves outside, so that it encloses them all.
-
-        A branch samples the boundary at its stations and runs straight between them, so data lying in
-        between can fall on the wrong side of a segment. Rather than displacing the branch outward by a
-        fixed margin, which would tie it to the bin width, the points that fall outside are made stations
-        of the branch themselves. The branch then passes through them exactly and encloses the rest.
+        """Make every data point left outside a branch a station of that branch, so the branch encloses all data.
 
         :param stations: stations of the branch.
         :type stations: np.ndarray[float]
@@ -1151,13 +1046,11 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         :return: the stations of the enclosing branch and its value at each of them.
         :rtype: tuple[np.ndarray[float]]
         """
-        # Data beyond the ends of the branch is not enclosed by it and is left to the branches that
-        # close the perimiter there.
+        # Data beyond the ends of the branch is left to the other branches.
         spanned = (data_along >= stations[0]) & (data_along <= stations[-1])
         data_along, data_across = data_along[spanned], data_across[spanned]
 
-        # Inserting a station changes the two segments meeting at it, which can leave further points
-        # outside; a handful of passes settles it, and each pass strictly encloses more than the last.
+        # Inserting a station can leave further points outside, so enclosing is repeated.
         for _ in range(self.__max_enclosure_passes):
             branch_at_data = np.interp(data_along, stations, values)
             outside = (data_across < branch_at_data) if encloses_from_below else (data_across > branch_at_data)
@@ -1167,9 +1060,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             stations = np.append(stations, data_along[outside])
             values = np.append(values, data_across[outside])
 
-            # Ordered along the sweep, and within a shared station by value, so that the outermost of
-            # any points sitting at the same station comes last. Points sharing a station would
-            # otherwise make the branch ambiguous.
+            # Sort along the sweep, then by value, so the outermost point at a station comes last.
             order = np.lexsort((-values if encloses_from_below else values, stations))
             stations, values = stations[order], values[order]
 
@@ -1179,16 +1070,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return stations, values
 
     def __sweepEnvelope(self, coordinate_along:np.ndarray[float], coordinate_across:np.ndarray[float], N_bins:int):
-        """Bin the data along one coordinate and collect the extreme data point of the other in each bin.
-
-        A station is placed on the extreme data point itself, at both of its coordinates. Placing it at
-        the centre of its bin instead displaces the envelope outward by however far the extreme sits from
-        that centre, which is a bias of up to half a bin width that only disappears as the bin count
-        grows. Following the data points removes it, and makes the result far less sensitive to the bin
-        count: the bins then only decide how finely the boundary is sampled, not where it lies.
-
-        The lower and upper extreme of a bin are two different data points at two different positions
-        along the sweep, so each branch carries its own stations.
+        """Bin the data along one coordinate and collect the extreme data point of the other coordinate in each bin. Stations are placed on the extreme data points themselves.
 
         :param coordinate_along: coordinate to bin the data along.
         :type coordinate_along: np.ndarray[float]
@@ -1218,17 +1100,13 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         if len(extreme_lower) < self.__min_envelope_stations:
             return None
 
-        # Bins are disjoint and swept in order, so the stations of a branch are already ascending.
+        # Bins are swept in order, so stations are already ascending.
         return self.__branchOf(coordinate_along, coordinate_across, extreme_lower, encloses_from_below=True), \
                self.__branchOf(coordinate_along, coordinate_across, extreme_upper, encloses_from_below=False)
 
     def __branchOf(self, coordinate_along:np.ndarray[float], coordinate_across:np.ndarray[float], \
                    stations:list[int], encloses_from_below:bool):
-        """Assemble one branch from the data points a sweep collected, spanning the full extent of the data.
-
-        A bin holding too little data contributes no station, and the outermost bins are the ones that
-        run out of data first. The branch would then stop short of the data it is meant to bound, so the
-        outermost data points along the sweep are made stations of it regardless.
+        """Assemble one branch from the data points a sweep collected, adding the outermost data points along the sweep as stations.
 
         :param coordinate_along: sweep coordinate of the flamelet data.
         :type coordinate_along: np.ndarray[float]
@@ -1266,11 +1144,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
                at_end[take_outermost(coordinate_across[at_end])]
 
     def __simplifyEnvelope(self, pv_envelope:np.ndarray[float], h_envelope:np.ndarray[float], encloses_from_below:bool):
-        """Reduce an envelope branch to the stations needed to describe it within the simplification tolerance.
-
-        A segment spanning several stations is accepted while it stays on the enclosing side of each station it
-        spans and deviates from none of them by more than the tolerance. The first condition preserves the
-        flamelet data enclosed by the envelope, the second bounds how far the perimiter departs from it.
+        """Reduce an envelope branch to the stations needed to describe it within the simplification tolerance, keeping every station enclosed.
 
         :param pv_envelope: progress variable of the envelope stations.
         :type pv_envelope: np.ndarray[float]
@@ -1307,9 +1181,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return np.array(retained_stations)
 
     def _createBoundaryPolylineForTableLevel(self, levelValue:float):
-        # A plane running from the reactant to the product state is bounded by states that are
-        # evaluated rather than sampled, so its perimiter is built from those directly. Any other
-        # plane is bounded by the flamelet data alone.
+        # A reactant-to-product plane is built from evaluated states; any other plane from the flamelet data.
         if self.__spansReactantsToProducts():
             return self.__parametricBoundary(levelValue)
 
@@ -1326,9 +1198,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
 
         perimiter = None
         if equilibrium_branch is not None:
-            # The equilibrium branch replaces the segment closing the two enthalpy branches at maximum
-            # progress variable. Both enthalpy branches are truncated where they cross it, so the corners are
-            # the crossings themselves rather than the disagreement between the two sweeps.
+            # The equilibrium branch closes the enthalpy branches, which are truncated at their crossings with it.
             corner_lower = polylineIntersection(equilibrium_branch, lower_branch)
             corner_upper = polylineIntersection(equilibrium_branch, upper_branch)
             if corner_lower is not None and corner_upper is not None:
@@ -1358,7 +1228,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
             if np.linalg.norm(point - retained_points[-1]) > merge_tolerance:
                 retained_points.append(point)
 
-        # The closing segment is added by the mesher, so the perimiter should not end where it started.
+        # The mesher adds the closing segment, so the perimiter should not repeat its first point.
         if len(retained_points) > self.__min_perimiter_points and \
            np.linalg.norm(retained_points[-1] - retained_points[0]) <= merge_tolerance:
             retained_points.pop()
@@ -1366,13 +1236,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         return np.array(retained_points)
 
     def __referenceLattice(self, levelValue:float):
-        """Uniform lattice spanning a table level, together with the node mask to fall back on when the
-        flamelet data yields no envelope.
-
-        A plane spanned by the progress variable runs between the reactant and product states, which are
-        evaluated directly, and falls back on the straight line between the reactant and product enthalpy
-        limits. Any other plane is spanned by the extent of the flamelet data itself, which leaves nothing to
-        fall back on.
+        """Uniform lattice spanning a table level, with the node mask to fall back on when the flamelet data yields no envelope.
 
         :param levelValue: value of the table level.
         :type levelValue: float
@@ -1413,8 +1277,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     def _createPointCloudForTableLevel(self, levelValue:float):
         CV_grid_scaled, nodes_within_fallback_bounds = self.__referenceLattice(levelValue)
 
-        # The refinement field is sampled on the whole lattice rather than on the part of it that
-        # ends up inside the table level: the mesher asks for the cell size around the perimiter too.
+        # Sample the whole lattice, since the mesher also queries the cell size around the perimiter.
         self.__reference_lattice = CV_grid_scaled
 
         # Retain the nodes that lie within the table level.
@@ -1449,8 +1312,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         h_lower_at_node = np.interp(pv_nodes, lower_branch[:, 0], lower_branch[:, 1])
         h_upper_at_node = np.interp(pv_nodes, upper_branch[:, 0], upper_branch[:, 1])
 
-        # The branches carry their own stations, so the plane they bound together is where they overlap.
-        # Beyond that only one of them is defined and np.interp would extend it as a flat line.
+        # Restrict to where the branches overlap, as np.interp extends a single branch as a flat line.
         pv_start = max(lower_branch[0, 0], upper_branch[0, 0])
         pv_end = min(lower_branch[-1, 0], upper_branch[-1, 0])
         within_progress_variable_range = (pv_nodes >= pv_start) & (pv_nodes <= pv_end)
@@ -1485,9 +1347,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
     def _passRefinementOptions(self, mesher:Mesh2DPlane):
         super()._passRefinementOptions(mesher)
 
-        # Sampling the refinement on the reference lattice, once, replaces the per point evaluations
-        # the mesher would otherwise make while it decides where to place nodes. Those run into the
-        # hundreds of thousands for a single table level.
+        # Sample the refinement once on the lattice instead of per node during meshing.
         if self.__reference_lattice is not None:
             mesher.setRefinementField(self.__reference_lattice, \
                                       self._refinementFactorField(self.__reference_lattice))
@@ -1519,8 +1379,7 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         gradient_magnitude = np.linalg.norm(jacobian, axis=0) / self._gradient_norm_factors
         coefficients = np.asarray(self._gradient_refinement_factors)
 
-        # Scale from no refinement where the quantity is flat, down to the coefficient where its
-        # gradient is the steepest found on the level; the strongest demand over the quantities wins.
+        # Scale from no refinement where flat to the coefficient at the steepest gradient; the strongest demand wins.
         per_quantity = np.maximum(coefficients, 1.0 - (1.0 - coefficients)*gradient_magnitude)
         return np.minimum(np.min(per_quantity, axis=1), 1.0)
 

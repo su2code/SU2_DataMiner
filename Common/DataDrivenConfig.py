@@ -863,19 +863,14 @@ class Config_FGM(Config):
             self.__dict__ = loaded_config.__dict__.copy()
             print("Loaded configuration file with name " + loaded_config.GetConfigName())
         else:
-            # __flamelet_types is only ever mutated in place (append/remove) by
-            # includeFlameletType/excludeFlameletType. Without assigning it here,
-            # it stays a class-level attribute shared by every Config_FGM instance
-            # in the process and is never part of self.__dict__, so it silently
-            # does not survive a SaveConfig()/Config_FGM(load_file) round trip.
+            # Assigned here so the list is an instance attribute that survives SaveConfig round trips.
             self.__flamelet_types = [FlameletSolverOptions[0]]
 
             self.SetAlphaExpo(DefaultSettings_FGM.init_learning_rate_expo)
             self.SetLRDecay(DefaultSettings_FGM.learning_rate_decay)
             self.SetBatchExpo(DefaultSettings_FGM.batch_size_exponent)
             self.SetHiddenLayerArchitecture(DefaultSettings_FGM.hidden_layer_architecture)
-            # Seeding the default is not an explicit selection: the mixture bounds still settle the
-            # controlling variables until the user chooses them.
+            # Seeding the default is not an explicit selection; the mixture bounds still settle the controlling variables.
             self.__custom_cv_set = False
             super().SetControllingVariables(DefaultSettings_FGM.controlling_variables)
 
@@ -1290,8 +1285,7 @@ class Config_FGM(Config):
             self.__mix_status_lower = mix_lower
             self.__mix_status_upper = mix_upper
 
-        # Whether the manifold spans one mixture or a range of them follows from these bounds, so the
-        # controlling variables are re-derived here rather than only when a configuration is loaded.
+        # Re-derive the controlling variables, as they follow from the mixture bounds.
         self.__deriveControllingVariables()
 
         self.SetAverageLewisNumbers()
@@ -1563,10 +1557,7 @@ class Config_FGM(Config):
             self.__flamelet_types.remove(flamelet_type)
 
         self.__checkFlameletTypes()
-        # The list may be empty here while a script is still calling
-        # Run*Flames(False)/Run*Flames(True) in sequence to select which flamelet
-        # types to generate. The selection is validated where the config is used,
-        # by checkFlameletTypesSelected.
+        # The list may be empty while Run*Flames calls are in sequence; checkFlameletTypesSelected validates it.
 
         return
 

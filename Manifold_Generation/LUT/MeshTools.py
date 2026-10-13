@@ -52,8 +52,7 @@ class Mesh2DPlane:
         self.__meshNodes, self.__connectivity, self.__hullNodeIDs = self.__mesh2D()
         self._gmsh_geo.synchronize()
 
-        # Views outlive the model they were added to, so the last one is discarded here rather than
-        # left to accumulate over the table levels.
+        # Discard the last view, as views outlive the model they were added to.
         self.__clearRefinementField()
         return
     
@@ -142,11 +141,7 @@ class Mesh2DPlane:
         return self.__pointCloud[hullIndices]
 
     def __hullNodesFromBoundaryPolyline(self):
-        """Use the externally provided boundary polyline as the plane perimiter.
-
-        The polyline describes the perimiter directly, so no hull is extracted from the point cloud. This
-        avoids tracing the perimiter along a discrete point cloud, which yields a stair-cased boundary
-        whenever the perimiter is not aligned with the point cloud spacing.
+        """Use the externally provided boundary polyline as the plane perimiter instead of a hull of the point cloud.
         """
         planarCoords_hull = self.__boundary_polyline
         self.__plane_area = shoelace(planarCoords_hull)
@@ -159,12 +154,7 @@ class Mesh2DPlane:
         return hull_coords
 
     def setBoundaryPolyline(self, boundary_coords_2D:np.ndarray[float]):
-        """Provide an ordered, closed polyline describing the perimiter of the 2D plane. When provided, the
-        perimiter is taken from this polyline instead of being extracted as a hull around the point cloud.
-
-        Each point becomes a mesh vertex and each pair of consecutive points a perimiter edge, so
-        coincident points are dropped rather than meshed into zero-length edges. A polyline that
-        repeats its first point to close itself is accepted, as the closing segment is added here.
+        """Provide an ordered polyline describing the perimiter of the 2D plane, used instead of a hull around the point cloud. Coincident points are dropped.
 
         :param boundary_coords_2D: planar coordinates of the perimiter, ordered along the perimiter. The
             closing segment between the last and first point is added automatically.
@@ -340,12 +330,7 @@ class Mesh2DPlane:
         return
 
     def setRefinementField(self, field_nodes:np.ndarray[float], refinement_factors:np.ndarray[float]):
-        """Provide the local refinement sampled on a lattice, instead of a function to call back into.
-
-        The mesher evaluates the local cell size at far more locations than the mesh ends up having
-        nodes. Sampling the refinement once on a lattice and letting gmsh interpolate between those
-        samples replaces those evaluations entirely, at the cost of resolving the refinement no more
-        finely than the lattice does.
+        """Provide the local refinement sampled on a lattice, which gmsh interpolates instead of calling back into a function.
 
         :param field_nodes: lattice the refinement is sampled on, as a regular grid of planar
             coordinates ordered row by row.
@@ -368,18 +353,13 @@ class Mesh2DPlane:
         return
 
     def __prepareRefinementField(self):
-        """Hand gmsh the local cell size as a background field built from the sampled refinement.
-
-        The field is rebuilt on every meshing pass because the coarse cell size scales it, and that
-        size is what the target node count iterates on. Only the scaling is redone: the refinement
-        itself was sampled once.
+        """Hand gmsh the local cell size as a background field built from the sampled refinement, rescaled by the coarse cell size.
         """
         self.__clearRefinementField()
 
         cell_size = self._base_cell_size * self.__refinement_field_values
 
-        # One scalar quadrangle per lattice cell, as four corner coordinates followed by the cell
-        # size at those same four corners. Gmsh interpolates within each quadrangle.
+        # One quadrangle per lattice cell, carrying the cell size at its four corners.
         x, y = self.__refinement_field_nodes[:, :, 0], self.__refinement_field_nodes[:, :, 1]
         corners = [(slice(None, -1), slice(None, -1)), (slice(None, -1), slice(1, None)),
                    (slice(1, None), slice(1, None)), (slice(1, None), slice(None, -1))]
@@ -575,8 +555,7 @@ class MeshThermodynamicPlane(Mesh2DPlane):
     
 
     def __clipSaturationCurveToPlane(self, pts_offset_lower:np.ndarray[float], pts_offset_upper:np.ndarray[float]):
-        # Only the saturation curve of a thermodynamic plane is clipped against the hull, so shapely is
-        # imported here rather than at module level: meshing a table plane does not require it.
+        # Imported here, as meshing a table plane does not require shapely.
         from shapely.geometry import Point, Polygon
 
         hull_pts_orig = concave_hull(self._pointCloud_hullNodes, length_threshold=self._base_cell_size)
