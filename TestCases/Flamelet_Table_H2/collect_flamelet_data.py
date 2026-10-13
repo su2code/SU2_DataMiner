@@ -1,8 +1,8 @@
 # Collect flamelet data into data sets for table generation
-from Common.DataDrivenConfig import FlameletAIConfig
+from Common.DataDrivenConfig import Config_FGM
 from Data_Processing.collectFlameletData import FlameletConcatenator
 
-Config = FlameletAIConfig("TableGeneration.cfg")
+Config = Config_FGM("TableGeneration.cfg")
 
 Concat = FlameletConcatenator(Config)
 

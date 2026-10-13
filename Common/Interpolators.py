@@ -254,6 +254,14 @@ class fluidDataInterpolator:
             self.tuneTreeParameters()
         return
 
+    def getControllingVariableNodes(self):
+        """Scaled controlling variable values of the point cloud samples the interpolator was built from.
+
+        :return: scaled controlling variable data.
+        :rtype: np.ndarray[float]
+        """
+        return self.__controlling_variable_nodes
+
     def tuneTreeParameters(self):
 
         Np_total = np.shape(self.__controlling_variable_nodes)[0]
@@ -327,3 +335,32 @@ class fluidDataInterpolator:
                 return grads[:,0,:]
             else:
                 return grads
+
+
+def polylineIntersection(polyline_a:np.ndarray[float], polyline_b:np.ndarray[float]):
+    """Locate the last point at which two polylines cross.
+
+    :return: the crossing point with the index of the crossed segment in each polyline, or None.
+    :rtype: tuple
+    """
+    start_a, direction_a = polyline_a[:-1], np.diff(polyline_a, axis=0)
+    start_b, direction_b = polyline_b[:-1], np.diff(polyline_b, axis=0)
+
+    # Every segment of one polyline against every segment of the other, indexed as [a, b].
+    determinant = direction_a[:, None, 0]*direction_b[None, :, 1] \
+                - direction_a[:, None, 1]*direction_b[None, :, 0]
+    offset = start_b[None, :, :] - start_a[:, None, :]
+
+    # Parallel segments divide by zero; non-finite crossings are rejected below.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        along_a = (offset[:, :, 0]*direction_b[None, :, 1] - offset[:, :, 1]*direction_b[None, :, 0])/determinant
+        along_b = (offset[:, :, 0]*direction_a[:, None, 1] - offset[:, :, 1]*direction_a[:, None, 0])/determinant
+
+    crosses = (np.absolute(determinant) >= np.finfo(float).eps) \
+              & (along_a >= 0) & (along_a <= 1) & (along_b >= 0) & (along_b <= 1)
+    if not np.any(crosses):
+        return None
+
+    # The last crossing is the one furthest along both polylines.
+    iSegment, jSegment = np.argwhere(crosses)[-1]
+    return start_a[iSegment] + along_a[iSegment, jSegment]*direction_a[iSegment], iSegment, jSegment

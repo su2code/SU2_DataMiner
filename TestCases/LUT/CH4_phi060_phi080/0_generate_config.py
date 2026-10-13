@@ -9,9 +9,9 @@ Config.SetFuelDefinition(fuel_species=["CH4"], fuel_weights=[1.0])
 Config.SetReactionMechanism('gri30.yaml')
 
 # Single phi = 0.80 → single mixture fraction point (min == max)
-Config.SetMixtureBounds(0.80, 0.80)
+Config.SetMixtureBounds(0.60, 0.80)
 # Only use one equilibrium point, the final completely cooled and burnt state.
-Config.SetNpMix(1)
+Config.SetNpMix(11)
 
 Config.SetUnbTempBounds(270, 750)
 Config.SetNpTemp(49)

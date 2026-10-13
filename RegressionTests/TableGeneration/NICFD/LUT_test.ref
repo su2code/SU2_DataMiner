@@ -5,6 +5,10 @@ Dragon library
 [Version]
 1.0.1
 
+[Table axes]
+Density
+Energy
+
 Fluid:
 CarbonDioxide
 Equation of state:

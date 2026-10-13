@@ -1,1 +1,8 @@
 flamelet_data/**
+flamelet_data_n/**
+__pycache__/*
+TableGeneration.cfg
+TableGeneration_H2.cfg
+*.png
+*.vtk
+*.drg
