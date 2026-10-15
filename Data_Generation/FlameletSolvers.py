@@ -28,8 +28,9 @@ from typing import Dict
 import numpy as np
 import pandas as pd
 from Common.DataDrivenConfig import Config_FGM
-from Common.Properties import DefaultSettings_FGM, FGMVars
-from Common.CommonMethods import ComputeLewisNumber
+from Common.Properties import (DefaultSettings_FGM, FGMVars, PDMolecularCoefficientName,
+                               PDThermalCoefficientName, PDClosureSourceName)
+from Common.CommonMethods import ComputeLewisNumber, ComputeScalarDivergenceSources
 
 class FlameletSolver_Cantera:
     """Base class for Cantera flamelet solutions
@@ -38,6 +39,8 @@ class FlameletSolver_Cantera:
     _flamelet_type:str = "None"
 
     _flameletTypeOutputFolder:str = ""
+    _warned_no_pd_majors:bool = False    # Emit the missing-major-species warning only once.
+    _warned_no_soret:bool = False        # Emit the unsupported-Soret warning only once.
     _plotLabel:str = None
     _flamelet_filename:str
     _is_premixed:bool = True
@@ -356,6 +359,20 @@ class FlameletSolver_Cantera:
     def _commonPreprocessing(self):
         self._flameletSolution.set_refine_criteria(slope=self.__grid_refinement_slope,ratio=self.__grid_refinement_ratio,curve=self.__grid_refinement_curve,prune=self.__grid_refinement_prune)
         self._flameletSolution.transport_model = self._Config.GetTransportModel()
+        # The DT-<sp> and DT_<cv> coefficients tabulated from this solution are applied by the
+        # CFD as the thermal part of the preferential diffusion flux, so the flamelet has to be
+        # solved with the same physics. Cantera implements Soret for multicomponent transport
+        # only; with any other model the flag would raise at solve time.
+        if self._Config.GetSoretDiffusion():
+            if self._Config.GetTransportModel() == "multicomponent":
+                self._flameletSolution.soret_enabled = True
+            elif not FlameletSolver_Cantera._warned_no_soret:
+                FlameletSolver_Cantera._warned_no_soret = True
+                print("WARNING: Soret diffusion was requested but the transport model is '%s'. "
+                      "Cantera implements thermal diffusion for 'multicomponent' transport only, "
+                      "so the flamelets are solved without it while DT coefficients are still "
+                      "tabulated. Call Config.SetTransportModel('multicomponent') or "
+                      "Config.SetSoretDiffusion(False)." % self._Config.GetTransportModel())
         return
     
     def _computeFlameletSolution(self):
@@ -486,8 +503,12 @@ class FlameletSolver_Cantera:
 
         self._thermochemical_solution = pd.concat((self._thermochemical_solution, thermodynamic_df),axis=1)
 
+        self._collectPreferentialDiffusionData(species_specific_enthalpy, density,
+                                               specific_heat_cp, conductivity, temperature,
+                                               mass_fractions, solution_1D)
+
         self._writeInflowSettings()
-        
+
         return
 
     def _collectSourceTermData(self):
@@ -510,6 +531,135 @@ class FlameletSolver_Cantera:
         self._concatenateThermoChemicalData(neg_rates_labels, Y_dot_neg)
         return
     
+    def _collectPreferentialDiffusionData(self, species_specific_enthalpy:np.ndarray,
+                                          density, specific_heat_cp, conductivity, temperature,
+                                          mass_fractions:np.ndarray, solution_1D:bool):
+        """Collect the preferential diffusion data of model B2 (Schepers & van Oijen, C&F 280
+        (2025) 114332) for the flamelet solution.
+
+        Three groups of columns are written:
+
+        1. Species diffusion and Soret coefficients (``D-<sp>``, ``DT-<sp>``).
+        2. The Eq. (16) closure sources ``S_PV``, ``S_Z``, ``S_h``: the divergence of the
+           summed preferential diffusion fluxes of the NON-major species. The major species
+           are excluded because the CFD resolves their flux at runtime (item 3).
+        3. Pre-contracted Eq. (14) flux coefficients for the major species,
+           ``D_{cv,sp} = c_{cv,sp} * (rho*D_sp - lambda/cp)``, and the combined Soret
+           coefficients ``DT_{cv} = sum_sp c_{cv,sp} * DT_sp``.
+
+        Chemical equilibrium (0D) states carry no gradients, so their closure sources vanish
+        by construction.
+        """
+        species_names = self._canteraSolution.species_names
+        n_species = len(species_names)
+
+        # Species data are laid out as (n_species, n_points) for a 1D flamelet and as a flat
+        # (n_species,) vector for a 0D state, matching what _concatenateThermoChemicalData
+        # expects of the mass fractions and partial enthalpies.
+        if solution_1D:
+            D_i = self._flameletSolution.mix_diff_coeffs
+            DT_i = self._flameletSolution.thermal_diff_coeffs
+        else:
+            D_i = np.asarray(self._canteraSolution.mix_diff_coeffs).ravel()
+            DT_i = np.asarray(self._canteraSolution.thermal_diff_coeffs).ravel()
+
+
+        # Per-species rows for the coefficient arithmetic below, uniformly (n_species, n_points).
+        def as_species_rows(data):
+            data = np.asarray(data)
+            return data if data.ndim == 2 else data.reshape(n_species, 1)
+
+        D_rows = as_species_rows(D_i)
+        DT_rows = as_species_rows(DT_i)
+        h_rows = as_species_rows(species_specific_enthalpy)
+
+        source_term_method = (self._Config.GetPreferentialDiffusionMethod() == "SOURCE_TERM")
+        major_species = self._Config.GetPDMajorSpecies() if source_term_method else []
+        if source_term_method and not major_species and not FlameletSolver_Cantera._warned_no_pd_majors:
+            FlameletSolver_Cantera._warned_no_pd_majors = True
+            print("WARNING: no preferential diffusion major species are configured, so the "
+                  "Eq. (16) closure sources are built from ALL species. Under model B2 the "
+                  "major species are transported by the resolved Eq. (14) fluxes in the CFD, "
+                  "and including them here double-counts their preferential diffusion. Call "
+                  "Config.SetPDMajorSpecies([...]) before generating flamelet data.")
+        pv_species = self._Config.GetProgressVariableSpecies()
+        pv_weights = self._Config.GetProgressVariableWeights()
+        mixfrac_coeffs = self._Config.GetMixtureFractionCoefficients()
+
+        # Chemical equilibrium states and flamelets that failed to ignite carry no flame
+        # structure, so there is no preferential diffusion to close: their sources vanish
+        # identically. Computing them anyway would divide near-zero gradients by a very fine
+        # grid and return amplified round-off rather than a physical source.
+        n_points = np.shape(D_rows)[1]
+        if not source_term_method:
+            # BETA_CORRECTION carries preferential diffusion in the beta scalars alone; the model B2
+            # closure sources and flux coefficients are neither computed nor written, leaving that
+            # path byte-for-byte as it was.
+            return
+        if solution_1D and self.isBurning():
+            S_PV, S_Z, S_h, residuals = ComputeScalarDivergenceSources(
+                grid=self._flameletSolution.grid, rho=density, T=temperature,
+                cp=specific_heat_cp, k_lam=conductivity, Y_k=mass_fractions,
+                D_k=D_rows, DT_k=DT_rows, h_k=h_rows,
+                species_names=species_names, major_species=major_species,
+                pv_species=pv_species, pv_weights=pv_weights, mixfrac_coeffs=mixfrac_coeffs)
+        else:
+            S_PV = np.zeros(n_points)
+            S_Z = np.zeros(n_points)
+            S_h = np.zeros(n_points)
+
+        # Closure sources are named after the controlling variables they feed, matching the
+        # "prefD<phi>_Res" residual fields of the reference OpenFOAM implementation and the
+        # "Res_<cv>" look-up names SU2 composes from CONTROLLING_VARIABLE_NAMES.
+        cv_names = self._Config.GetControllingVariables()
+        sources_by_cv = {FGMVars.ProgressVariable.name: S_PV,
+                         FGMVars.EnthalpyTot.name: S_h,
+                         FGMVars.MixtureFraction.name: S_Z}
+        sources_df = pd.DataFrame()
+        for cv_name in cv_names:
+            if cv_name in sources_by_cv:
+                sources_df[PDClosureSourceName(cv_name)] = np.atleast_1d(sources_by_cv[cv_name])
+        self._thermochemical_solution = pd.concat((self._thermochemical_solution, sources_df), axis=1)
+
+        if not major_species:
+            return
+
+        # Eq. (14) runtime flux coefficients of the major species, in kg/(m s) (W/m for enthalpy).
+        # One molecular coefficient per (controlling variable, major species) pair -- the summation
+        # of Eq. (14) belongs to the CFD solver, which performs it against its own multi-dimensional
+        # gradients. The Soret coefficients are summed here because every species contribution
+        # multiplies the same temperature gradient, so that summation bakes in no flamelet gradient.
+        lam_over_cp = np.asarray(conductivity) / np.asarray(specific_heat_cp)
+        rho_arr = np.asarray(density)
+        coeffs = {}
+        DT = {cv: np.zeros(n_points) for cv in cv_names}
+        for sp_name in major_species:
+            sp_idx = species_names.index(sp_name)
+            rho_D_minus = rho_arr * D_rows[sp_idx, :] - lam_over_cp
+            DT_sp = DT_rows[sp_idx, :]
+
+            # c_{phi_k,i}: the progress variable weight, the mixture fraction coefficient, and for
+            # enthalpy the species enthalpy h_i(T), which varies along the flamelet.
+            weights = {FGMVars.ProgressVariable.name:
+                           pv_weights[pv_species.index(sp_name)] if sp_name in pv_species else 0.0,
+                       FGMVars.MixtureFraction.name:
+                           float(mixfrac_coeffs[sp_idx]) if mixfrac_coeffs is not None else 0.0,
+                       FGMVars.EnthalpyTot.name: h_rows[sp_idx, :]}
+            for cv_name in cv_names:
+                if cv_name not in weights:
+                    continue
+                c_cv = weights[cv_name]
+                coeffs[PDMolecularCoefficientName(cv_name, sp_name)] = np.atleast_1d(c_cv * rho_D_minus)
+                DT[cv_name] = DT[cv_name] + c_cv * DT_sp
+
+        for cv_name in cv_names:
+            coeffs[PDThermalCoefficientName(cv_name)] = np.atleast_1d(DT[cv_name])
+        # Assembled from a dict in one construction rather than inserted column by column,
+        # which would fragment the frame.
+        coeffs_df = pd.DataFrame(coeffs)
+        self._thermochemical_solution = pd.concat((self._thermochemical_solution, coeffs_df), axis=1)
+        return
+
     def _concatenateThermoChemicalData(self, labels:list[str], data:np.ndarray[float]):
         solution_1D = (np.asarray(self._flameletSolution.T).ndim == 1)
         if solution_1D:
@@ -805,13 +955,23 @@ class BurnerFlameSolver(FlameletSolver_Cantera):
     def _postProcessResults(self):
         super()._postProcessResults()
         if self.__iterate_enthalpy():
-            enth_current = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
-            if self.__enth_prev is not None:
-                delta_enth = abs(enth_current - self.__enth_prev)
-                scale_mdot = np.clip(self.__delta_enth/delta_enth, 0.2, 5.0)
-                self.__delta_massflow *= scale_mdot
+            # A flamelet that fails to converge is never extracted, so there is no solution
+            # to read the enthalpy from -- near the lean flammability limit that happens
+            # routinely. Skip the adaptive step-size update in that case instead of
+            # dereferencing the absent solution, but keep advancing the mass flow so the
+            # sweep still progresses towards its stopping criterion.
+            if self.isConverged() and self._thermochemical_solution is not None:
+                enth_current = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
+                if self.__enth_prev is not None:
+                    delta_enth = abs(enth_current - self.__enth_prev)
+                    # Two identical enthalpies would make the ratio 0/0 and poison the step
+                    # size with a NaN for the rest of the sweep.
+                    if delta_enth > 0.0:
+                        scale_mdot = np.clip(self.__delta_enth/delta_enth, 0.2, 5.0)
+                        self.__delta_massflow *= scale_mdot
 
-            self.__enth_prev = self._thermochemical_solution[FGMVars.EnthalpyTot.name][0]
+                self.__enth_prev = enth_current
+
             self.__val_massflow_enthalpy -= self.__delta_massflow
             self._keep_iterating = (self.__val_massflow_enthalpy > 0.001*self.__adiabatic_massflow)
         return
@@ -1074,7 +1234,7 @@ class EquilibriumSolver(FlameletSolver_Cantera):
         super().setMixtureStatus(val_mixture_status)
         self.__is_lean = False
         if self._Config.GetMixtureStatus():
-            z_stoch = self._Config.GetMixtureFractionConstant()
+            z_stoch = self._Config.GetStoichiometricMixtureFraction()
             if val_mixture_status<= z_stoch:
                 self.__is_lean = True
         else:
@@ -1151,6 +1311,10 @@ class CooledFlameInterpolator(FlameletSolver_Cantera):
 
         linear_interpolation = w_a_lin * self.__burnerFlameSolution.values + ratio * self.__equilibriumSolution.values[iMin]
 
+        # Reaction rates and heat release are blended with the exponential weighting, every
+        # other variable linearly. Selecting per column and building the frame in one go keeps
+        # the result identical while avoiding a column-by-column insert of the whole solution,
+        # which fragments the DataFrame and is what pandas warns about.
         self._thermochemical_solution = pd.DataFrame()
         for iVar, var in enumerate(self.__burnerFlameSolution.keys()):
             if (var==FGMVars.Heat_Release.name) or "Y_dot" in var:

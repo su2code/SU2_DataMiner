@@ -2,8 +2,9 @@
 from Common.DataDrivenConfig import FlameletAIConfig
 from Data_Processing.collectFlameletData import FlameletConcatenator
 
-Config = FlameletAIConfig("TableGeneration.cfg")
+Config = Config_FGM("TableGeneration.cfg")
 
+# Interpolate 200 points per flamelet
 Concat = FlameletConcatenator(Config)
 
 # Include NOx reaction rates and heat release in flamelet data set

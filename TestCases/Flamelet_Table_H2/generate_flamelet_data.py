@@ -4,7 +4,7 @@ from Common.DataDrivenConfig import FlameletAIConfig
 from Data_Generation.DataGenerator_FGM import ComputeFlameletData
 
 # Load FlameletAI configuration
-Config = FlameletAIConfig("TableGeneration.cfg")
+Config = Config_FGM("TableGeneration.cfg")
 
-# Distribute flamelet data generation process over 20 cores.
-ComputeFlameletData(Config, run_parallel=True, N_processors=20)
+# Distribute flamelet data generation process.
+ComputeFlameletData(Config, run_parallel=True, N_processors=6)

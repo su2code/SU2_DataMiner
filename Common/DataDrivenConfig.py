@@ -799,6 +799,12 @@ class Config_FGM(Config):
     __pv_weights:list[float] = DefaultSettings_FGM.pv_weights      # Progress variable mass fraction weights.
     __custom_pv_set:bool = False    # User-defined progress variable
 
+    __pd_major_species:list[str] = DefaultSettings_FGM.pd_major_species  # Major species carrying the resolved Eq. (14) flux in the CFD
+    __pd_method:str = DefaultSettings_FGM.pd_method                      # BETA_CORRECTION or SOURCE_TERM
+    __mixfrac_definition:str = DefaultSettings_FGM.mixfrac_definition    # BILGER or ELEMENTAL
+    __mixfrac_element:str = DefaultSettings_FGM.mixfrac_element          # element of the ELEMENTAL definition
+    __mixfrac_stoch:float = None                                         # stoichiometric mixture fraction
+
     __passive_species:list[str] = [] # Passive species for which to generate source terms.
 
     __lookup_variables:list[str] = ["Heat_Release"] # Extra look-up variables to read from flamelet data
@@ -838,6 +844,7 @@ class Config_FGM(Config):
     __mixfrac_coeff_carrier:float = None
 
     __Le_avg_method = avg_Le_const
+    __enable_soret:bool = False  # Solve the flamelets with thermal (Soret) diffusion (opt-in).
     __Le_const_sp:np.ndarray[float] = None
     __Le_avg_eq_ratio:float = None
     __Le_avg_T_unb:float = None
@@ -1039,11 +1046,30 @@ class Config_FGM(Config):
                 W_s = self.gas.molecular_weights[i_s]
                 w_z[i_s] += g * n_atoms * W_e / W_s
 
+        if self.__mixfrac_definition == "ELEMENTAL":
+            # Eq. (11) of Schepers & van Oijen: the mixture fraction is the mass fraction of a single
+            # element. Normalising it to 0 in the oxidiser stream and 1 in the fuel stream leaves it
+            # identical to Bilger's definition along the whole mixing line (both are affine in Y and
+            # both are pinned at the same two stream states), so every equivalence-ratio conversion,
+            # inlet condition and table level in the workflow carries over unchanged. The two only
+            # part company for reacted states, where the element is distributed over the products --
+            # which is exactly the difference the model is meant to capture.
+            if self.__mixfrac_element is None:
+                self.__mixfrac_element = self.__selectMixtureFractionElement()
+            w_z = self.__elementMassFractionCoefficients(self.__mixfrac_element)
+
         beta_o = np.sum(w_z * Y_o)
         beta_f = np.sum(w_z * Y_f)
         self.__mixfrac_coefficients = w_z / (beta_f - beta_o)
         self.__mixfrac_constant = -beta_o / (beta_f - beta_o)
         self.__mixfrac_coeff_carrier = self.__mixfrac_coefficients[self.gas.species_index(self.__carrier_specie)]
+
+        # Stoichiometric mixture fraction, evaluated in the active definition. Kept separately
+        # because the offset above only coincides with it for Bilger's definition -- for the
+        # elemental definition of a fuel that carries no oxidiser-side element the offset is zero.
+        self.gas.TP = self.__T_unb_lower, DefaultSettings_FGM.pressure
+        self.gas.set_equivalence_ratio(1.0, self.__fuel_string, self.__oxidizer_string)
+        self.__mixfrac_stoch = float(np.dot(self.__mixfrac_coefficients, self.gas.Y) + self.__mixfrac_constant)
         return
 
     def GetMixtureFractionCoefficients(self):
@@ -1703,6 +1729,156 @@ class Config_FGM(Config):
         """
         return self.__pv_weights
 
+    def SetPDMajorSpecies(self, major_species:list[str]):
+        """Set the major species excluded from the S_PV/S_Z/S_h closure source terms.
+
+        Per Schepers & van Oijen (2025) Eq. 16, the divergence source terms cover only
+        non-major species. Major species are handled by a separate runtime preferential
+        diffusion flux in the CFD solver (using stored D-coefficients), so including them
+        in the source term would double-count their contribution.
+
+        Typical selections:
+          FGM A / B1: ["H2", "H2O"]
+          FGM B2:     ["H2", "H2O", "H"]
+
+        :param major_species: list of species names to exclude from source terms.
+        :type major_species: list[str]
+        :raises Exception: if any species is not present in the reaction mechanism.
+        """
+        if any(sp not in self.__species_in_mixture for sp in major_species):
+            raise Exception("Not all major species are present in the reaction mechanism.")
+        self.__pd_major_species = list(major_species)
+
+    def GetPDMajorSpecies(self):
+        """Get the list of major species excluded from the S_PV/S_Z/S_h source terms.
+
+        :return: list of major species names.
+        :rtype: list[str]
+        """
+        return self.__pd_major_species
+
+    def SetPreferentialDiffusionMethod(self, method:str=DefaultSettings_FGM.pd_method):
+        """Select the preferential diffusion formulation, mirroring SU2's PREFERENTIAL_DIFFUSION_METHOD.
+
+        BETA_CORRECTION leaves the workflow exactly as it was: the four beta scalars of the
+        constant-Lewis correction, and Bilger's mixture fraction.
+
+        SOURCE_TERM selects model B2 of Schepers & van Oijen, C&F 280 (2025) 114332. The manifold
+        then also carries, per major species, the Eq. (14) molecular flux coefficients
+        "D_<cv>_<species>" and the mass fractions "Y-<species>" whose CFD-resolved gradients they
+        multiply, plus the combined Soret coefficients "DT_<cv>" and the Eq. (16) closure sources
+        "Res_<cv>" of the remaining species. It also switches the mixture fraction to the elemental
+        definition of the paper (Eq. 11), because that is the control variable the model is derived
+        for; the two definitions agree exactly on the mixing line, so inlet and initial states are
+        unaffected, and differ only for reacted states.
+
+        :param method: "BETA_CORRECTION" or "SOURCE_TERM".
+        :raises Exception: if the method is not recognised.
+        """
+        if method not in DefaultSettings_FGM.pd_methods:
+            raise Exception("Preferential diffusion method should be one of %s"
+                            % ", ".join(DefaultSettings_FGM.pd_methods))
+        self.__pd_method = method
+        if method == "SOURCE_TERM":
+            self.SetMixtureFractionDefinition("ELEMENTAL", self.__mixfrac_element)
+        return
+
+    def GetPreferentialDiffusionMethod(self):
+        """Active preferential diffusion formulation.
+
+        :return: "BETA_CORRECTION" or "SOURCE_TERM".
+        :rtype: str
+        """
+        return self.__pd_method
+
+    def SetMixtureFractionDefinition(self, definition:str=DefaultSettings_FGM.mixfrac_definition,
+                                     element:str=None):
+        """Choose how the mixture fraction control variable is composed from the species.
+
+        BILGER uses Bilger's coupling function. ELEMENTAL uses the mass fraction of a single
+        element, normalised to 0 in the oxidiser stream and 1 in the fuel stream, which reduces to
+        Eq. (11) of Schepers & van Oijen for a pure fuel. The normalisation is what keeps the two
+        definitions identical along the whole mixing line, so every equivalence-ratio-to-mixture-
+        fraction conversion in the workflow stays valid under either choice.
+
+        :param definition: "BILGER" or "ELEMENTAL".
+        :param element: element for the ELEMENTAL definition; None auto-selects the element with the
+            largest mass fraction in the fuel stream that is absent from the oxidiser stream.
+        :raises Exception: if the definition or element is not recognised.
+        """
+        if definition not in DefaultSettings_FGM.mixfrac_definitions:
+            raise Exception("Mixture fraction definition should be one of %s"
+                            % ", ".join(DefaultSettings_FGM.mixfrac_definitions))
+        if element is not None and element not in self.gas.element_names:
+            raise Exception("Element %s is not present in the reaction mechanism." % element)
+        self.__mixfrac_definition = definition
+        self.__mixfrac_element = element
+        self.ComputeMixFracConstants()
+        return
+
+    def GetMixtureFractionDefinition(self):
+        """Active mixture fraction definition.
+
+        :return: "BILGER" or "ELEMENTAL".
+        :rtype: str
+        """
+        return self.__mixfrac_definition
+
+    def GetMixtureFractionElement(self):
+        """Element used by the ELEMENTAL mixture fraction definition (None for BILGER).
+
+        :rtype: str
+        """
+        return self.__mixfrac_element
+
+    def GetStoichiometricMixtureFraction(self):
+        """Mixture fraction at stoichiometry, in the active definition.
+
+        Both definitions are normalised to the same mixing-line coordinate, so this is the same
+        number either way -- but it is NOT the mixture fraction offset, which only coincides with
+        it for Bilger's definition.
+
+        :rtype: float
+        """
+        return self.__mixfrac_stoch
+
+    def __selectMixtureFractionElement(self):
+        """Pick the element carried by the fuel stream and absent from the oxidiser stream.
+
+        With several candidates (a hydrocarbon carries both C and H) the one with the largest mass
+        fraction in the fuel stream is chosen and reported, so the choice is visible rather than
+        silent; SetMixtureFractionDefinition takes an explicit element to override it.
+        """
+        self.gas.TP = self.__T_unb_lower, DefaultSettings_FGM.pressure
+        self.gas.set_mixture_fraction(0.0, self.__fuel_string, self.__oxidizer_string)
+        Y_o = np.copy(self.gas.Y)
+        self.gas.set_mixture_fraction(1.0, self.__fuel_string, self.__oxidizer_string)
+        Y_f = np.copy(self.gas.Y)
+
+        candidates = []
+        for element in self.gas.element_names:
+            c_e = self.__elementMassFractionCoefficients(element)
+            Z_f, Z_o = float(np.dot(c_e, Y_f)), float(np.dot(c_e, Y_o))
+            if Z_f - Z_o > 1e-12 and Z_o < 1e-12:
+                candidates.append((Z_f, element))
+        if not candidates:
+            raise Exception("No element is present in the fuel stream and absent from the oxidiser "
+                            "stream, so the elemental mixture fraction is ambiguous. Pass the element "
+                            "explicitly to SetMixtureFractionDefinition.")
+        candidates.sort(reverse=True)
+        element = candidates[0][1]
+        if len(candidates) > 1:
+            print("Elemental mixture fraction: using element %s (candidates: %s). Pass the element "
+                  "explicitly to SetMixtureFractionDefinition to override."
+                  % (element, ", ".join(c[1] for c in candidates)))
+        return element
+
+    def __elementMassFractionCoefficients(self, element:str):
+        """Per-species mass fraction of one element: c_i = n_e(i) * W_e / W_i."""
+        W_e = self.gas.atomic_weights[self.gas.element_index(element)]
+        return np.array([self.gas.n_atoms(self.gas.species_name(i), element) * W_e
+                         / self.gas.molecular_weights[i] for i in range(self.gas.n_species)])
+
     def SetDefaultProgressVariable(self):
         """Set progress variable to be weighted sum of fuel and oxidizer species (minus N2) and major product at stochiometry.
            Weights are set as the inverse of specie molecular weight: negative for reactants, positive for product.
@@ -1913,6 +2089,33 @@ class Config_FGM(Config):
         :rtype: bool
         """
         return self.__preferential_diffusion
+
+    def SetSoretDiffusion(self, enable:bool=True):
+        """Include thermal (Soret) diffusion in the flamelet solution.
+
+        Off by default, which leaves existing flamelet data unchanged. Enable it for the
+        SOURCE_TERM method: the ``DT_<cv>`` coefficients written for each flamelet are read
+        straight off the Cantera solution, and the CFD applies them at runtime as the thermal
+        part of the preferential diffusion flux. Solving the flamelets without Soret while
+        tabulating Soret coefficients from them leaves the manifold and the runtime flux model
+        describing different physics, which matters for hydrogen in particular.
+
+        Cantera implements thermal diffusion only for the multicomponent transport model; with
+        any other transport model the setting is ignored and a warning is emitted once.
+
+        :param enable: whether to solve the flamelets with Soret diffusion, defaults to True
+        :type enable: bool, optional
+        """
+        self.__enable_soret = enable
+        return
+
+    def GetSoretDiffusion(self):
+        """Whether the flamelets are solved with thermal (Soret) diffusion.
+
+        :return: Soret diffusion setting.
+        :rtype: bool
+        """
+        return self.__enable_soret
 
     def SetAveragingMethod(self, avg_method=avg_Le_const):
         self.__Le_avg_method = avg_method

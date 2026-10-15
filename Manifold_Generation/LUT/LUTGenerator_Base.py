@@ -29,12 +29,35 @@ import pandas
 from os import sep
 from copy import copy
 from sklearn.preprocessing import MinMaxScaler
-from multiprocessing import Pool
+from multiprocessing import Pool, get_context
+
+
 from scipy.interpolate import RBFInterpolator
 
 from Common.Interpolators import fluidDataInterpolator
 from Common.DataDrivenConfig import Config
 from Manifold_Generation.LUT.MeshTools import Mesh2DPlane
+
+
+def createWorkerPool(n_workers:int):
+    """Create a worker pool with fork semantics wherever the platform allows it.
+
+    Linux defaults to forking, but macOS and Windows default to the "spawn" start method, under
+    which every worker re-imports the ``__main__`` module. A driver script that builds and runs
+    the table generator at module level (the usual style) therefore re-executes itself in each
+    worker, which then fails while bootstrapping; the pool replaces the dead worker and the cycle
+    repeats without meshing a single level. Avoiding that under spawn would require every driver
+    script to be wrapped in an ``if __name__ == "__main__":`` guard. Falls back to the platform
+    default where fork is unavailable.
+
+    :param n_workers: number of worker processes.
+    :type n_workers: int
+    :return: process pool.
+    """
+    try:
+        return get_context("fork").Pool(n_workers)
+    except (ValueError, OSError):
+        return Pool(n_workers)
 
 
 class SU2TableGenerator_Base:
@@ -56,11 +79,22 @@ class SU2TableGenerator_Base:
     _conditional_upper_bound:list[float] = []       # Upper bounds of conditional refinement quantities.
     _conditional_refinement_factor:list[float] = [] # Refinement factors to apply within the bounds
 
+    _normalized_refinement_dims:list[int] = []      # Controlling variable indices for which refinement is applied within a normalized range
+    _normalized_lower_bound:list[float] = []        # Lower bounds of the normalized refinement ranges.
+    _normalized_upper_bound:list[float] = []        # Upper bounds of the normalized refinement ranges.
+    _normalized_refinement_factor:list[float] = []  # Refinement factors to apply within the normalized ranges
+
+    _level_cv_lower:np.ndarray[float] = None        # Per-level lower bounds of the scaled controlling variables.
+    _level_cv_span:np.ndarray[float] = None         # Per-level extent of the scaled controlling variables.
+
     _scaler_controlling_variables:MinMaxScaler = MinMaxScaler()
     _fluid_data_interpolator:fluidDataInterpolator = None
 
     __smoothTableData:bool = False
     __smoothingLevel:float = 0.1
+
+    __anchorHullEdges:bool = True
+    _hull_edge_anchors:list = []
 
     __N_nearest_neighbors:int = None
     __inverse_distance_exponent:float = None
@@ -99,8 +133,110 @@ class SU2TableGenerator_Base:
 
         self._generateTableLevelData()
 
+        self._applyHullEdgeAnchors()
+
         if self.__smoothTableData:
             self._smoothTableLevelData()
+
+        self._postProcessTableData()
+        return
+
+    def _varsExcludedFromSmoothing(self):
+        """Table variables that must not be touched by the smoothing pass.
+
+        The controlling variables define the node coordinates and are never smoothed.
+        Subclasses extend this for quantities whose shape smoothing would destroy.
+
+        :return: variable names to leave untouched.
+        :rtype: list[str]
+        """
+        return list(self._Config.GetControllingVariables())
+
+    def _unsmoothedNodes(self, level_index:int):
+        """Table nodes on this level that the smoothing pass must reproduce exactly.
+
+        Smoothing denoises nodes that have neighbours on all sides; where every neighbour lies
+        on one side its stencil is one-sided and it biases instead. Subclasses return the nodes
+        of such regions. None by default.
+
+        :param level_index: table level index.
+        :type level_index: int
+        :return: node indices.
+        :rtype: np.ndarray[int]
+        """
+        return np.zeros(0, dtype=int)
+
+    def _hullEdgeAnchors(self, level_index:int):
+        """Table nodes on this level whose state is known exactly, and the values they carry.
+
+        Subclasses return a mapping from variable name to a pair of (node indices, values), so
+        that different edges of the same level can anchor different quantities. Returning None
+        anchors nothing, which is the default.
+
+        :param level_index: table level index.
+        :type level_index: int
+        :return: {variable name: (node indices, values)}, or None.
+        :rtype: dict[str, tuple[np.ndarray[int], np.ndarray[float]]] | None
+        """
+        return None
+
+    def _applyHullEdgeAnchors(self):
+        """Restate the exactly known values on the perimeter of every table level.
+
+        Both stages that produce level data have one-sided support on the perimeter: the
+        inverse-distance interpolation draws on the nearest point-cloud samples and the
+        smoothing pass on the nearest table nodes, and on an edge every one of those neighbours
+        lies inwards. A quantity that vanishes on the edge but is large just inside it is
+        therefore pulled up towards the interior. The reaction source is the worst case, being
+        both exactly zero on the chemically frozen edges and steep immediately inside them:
+        measured on the H2 manifold the burnt edge ended up reacting at roughly 400 times the
+        rate of the point cloud the table was built from, and a CFD solver reads precisely those
+        nodes whenever a state is clamped back onto the manifold.
+
+        Anchoring runs before smoothing so that the smoother sees the corrected values, and the
+        anchored nodes are then fitted without regularisation so it reproduces rather than
+        re-smears them.
+        """
+        self._hull_edge_anchors = [None] * self._N_table_levels
+        if not self.__anchorHullEdges:
+            return
+
+        n_anchored = 0
+        for iLevel in range(self._N_table_levels):
+            anchors = self._hullEdgeAnchors(iLevel)
+            if not anchors:
+                continue
+            anchors = {var: (np.asarray(idx, dtype=int), np.asarray(val, dtype=float))
+                       for var, (idx, val) in anchors.items()
+                       if var in self._data_in_table[iLevel] and len(idx) > 0}
+            if not anchors:
+                continue
+            self._hull_edge_anchors[iLevel] = anchors
+            self.__writeAnchors(iLevel, anchors)
+            n_anchored += len(self.__anchoredNodeIndices(anchors))
+
+        if n_anchored:
+            self.__printmsg("Anchored %i hull edge nodes over %i table levels" % (n_anchored, self._N_table_levels))
+        return
+
+    @staticmethod
+    def __anchoredNodeIndices(anchors:dict):
+        """Union of the node indices touched by an anchor set."""
+        return np.unique(np.concatenate([idx for idx, _ in anchors.values()]))
+
+    def __writeAnchors(self, level_index:int, anchors:dict):
+        """Write anchored values into a level's data frame by position."""
+        level_data = self._data_in_table[level_index]
+        for var, (idx, val) in anchors.items():
+            level_data.iloc[idx, level_data.columns.get_loc(var)] = val
+        return
+
+    def _postProcessTableData(self):
+        """Hook for corrections that must be applied to the finished table data.
+
+        Called after the level data have been interpolated and smoothed, so anything applied
+        here sees the values that are actually written to the table. Does nothing by default.
+        """
         return
     
     def _processTableLevels(self):
@@ -150,7 +286,7 @@ class SU2TableGenerator_Base:
         self._table_hullnodes = [None]*self._N_table_levels
         self._data_in_table = [None]*self._N_table_levels
         if self.__run_parallel:
-            pool = Pool(self.__N_cores)
+            pool = createWorkerPool(self.__N_cores)
             results = pool.map(self.meshTableLevel, [i for i in range(self._N_table_levels)])
             pool.close()
 
@@ -175,11 +311,30 @@ class SU2TableGenerator_Base:
             cv_level_scaled = self._scaler_controlling_variables.transform(self._table_nodes[iLevel])
             
             data_on_table_level = self._data_in_table[iLevel].values
-            smoothener = RBFInterpolator(cv_level_scaled[:, :2], data_on_table_level, kernel="linear",smoothing=self.__smoothingLevel,neighbors=100)
+
+            # Anchored nodes are fitted exactly (zero regularisation) so that the smoother
+            # reproduces the values written by _applyHullEdgeAnchors instead of pulling them
+            # back towards the interior. Regularisation is per node rather than per variable,
+            # so an anchored node keeps its interpolated values for every other quantity too --
+            # which is what is wanted on a perimeter, where the smoother's stencil is one-sided
+            # and it biases rather than denoises.
+            smoothing = np.full(len(cv_level_scaled), self.__smoothingLevel, dtype=float)
+            anchors = self._hull_edge_anchors[iLevel] if self._hull_edge_anchors else None
+            if anchors:
+                smoothing[self.__anchoredNodeIndices(anchors)] = 0.0
+            smoothing[self._unsmoothedNodes(iLevel)] = 0.0
+
+            smoothener = RBFInterpolator(cv_level_scaled[:, :2], data_on_table_level, kernel="linear",smoothing=smoothing,neighbors=100)
             smoothened_table_data = smoothener(cv_level_scaled[:, :2])
+            excluded = self._varsExcludedFromSmoothing()
             for ivar, var in enumerate(list(self._data_in_table[iLevel].keys())):
-                if var not in self._Config.GetControllingVariables():
+                if var not in excluded:
                     self._data_in_table[iLevel][var] = smoothened_table_data[:, ivar]
+
+            # Restated afterwards as well: the zero-regularisation fit already reproduces them,
+            # but this keeps the guarantee independent of how well conditioned that fit is.
+            if anchors:
+                self.__writeAnchors(iLevel, anchors)
         self.__printmsg("Done")
         return
     
@@ -236,8 +391,112 @@ class SU2TableGenerator_Base:
         self._conditional_upper_bound.append(upperbound)
         self._conditional_refinement_factor.append(coef)
         return
-    
-    
+
+    def applyRefinementWithinNormalized(self, varname:str, lowerbound:float=0.0, upperbound:float=1.0, coef:float=0.5):
+        """Specify refinement within a range of a controlling variable, normalized per table level.
+
+        Unlike :meth:`applyRefinementWithin`, which tests an absolute value, the bounds here are
+        fractions of the extent that the controlling variable actually spans on the table level
+        being meshed. Zero is the lower edge of that level and one is the upper edge.
+
+        This is what makes edge-following refinement expressible on a 3D table. The controlling
+        variables are scaled once, globally, over the whole point cloud, so a fixed coordinate
+        does not correspond to the same feature on every level: the burnt progress variable is the
+        equilibrium value at that level's mixture fraction, and on a lean or rich level it sits
+        far below the global maximum that scaled coordinate 1 refers to. Testing the normalized
+        coordinate instead follows the equilibrium edge across the levels. Refining the burnt 20%
+        of every level is then::
+
+            generator.applyRefinementWithinNormalized("ProgressVariable", 0.8, 1.0, 0.5)
+
+        :param varname: controlling variable name.
+        :type varname: str
+        :param lowerbound: lower bound of the normalized range, defaults to 0.0
+        :type lowerbound: float, optional
+        :param upperbound: upper bound of the normalized range, defaults to 1.0
+        :type upperbound: float, optional
+        :param coef: mesh refinement factor, defaults to 0.5
+        :type coef: float, optional
+        :raises Exception: if the variable is not a controlling variable of the table.
+        :raises Exception: if the bounds lie outside [0, 1] or the lower bound exceeds the upper bound.
+        :raises Exception: if the coefficient value is negative.
+        """
+        controlling_variables = list(self._Config.GetControllingVariables())
+        if varname not in controlling_variables:
+            raise Exception("%s is not a controlling variable of this table, options are %s" % (varname, ", ".join(controlling_variables)))
+        if lowerbound < 0.0 or upperbound > 1.0:
+            raise Exception("Normalized refinement bounds should lie between zero and one")
+        if lowerbound > upperbound:
+            raise Exception("Upper bound value should exceed lower bound value")
+        if coef <= 0:
+            raise Exception("Refinement coeffcient should be positive")
+
+        iDim = controlling_variables.index(varname)
+        if iDim >= self._nDim_table:
+            raise Exception("%s is not a controlling variable of this table" % varname)
+        if self._is3D() and iDim == 2:
+            raise Exception("Normalized refinement is meaningless along the table level direction %s, since a level spans a single value of it" % varname)
+
+        self._normalized_refinement_dims.append(iDim)
+        self._normalized_lower_bound.append(lowerbound)
+        self._normalized_upper_bound.append(upperbound)
+        self._normalized_refinement_factor.append(coef)
+        return
+
+    def _setLevelBounds(self, pointCloud_scaled:np.ndarray[float]):
+        """Record the extent that each controlling variable spans on the level being meshed.
+
+        The point cloud bounds the meshed domain -- the perimeter is a concave hull of it -- so
+        its bounding box is the reference against which normalized refinement positions are
+        measured.
+
+        :param pointCloud_scaled: scaled point cloud coordinates of the current table level.
+        :type pointCloud_scaled: np.ndarray[float]
+        """
+        finite_pts = pointCloud_scaled[np.isfinite(pointCloud_scaled).all(axis=1)]
+        if len(finite_pts) == 0:
+            self._level_cv_lower = None
+            self._level_cv_span = None
+            return
+        self._level_cv_lower = finite_pts.min(axis=0)
+        self._level_cv_span = finite_pts.max(axis=0) - self._level_cv_lower
+        return
+
+    def _normalizedLevelCoord(self, iDim:int, coords:np.ndarray[float]):
+        """Position along a controlling variable as a fraction of the current level's extent.
+
+        :param iDim: controlling variable index.
+        :type iDim: int
+        :param coords: scaled controlling variable values (x, y, z).
+        :type coords: np.ndarray[float]
+        :return: normalized position, or None if the level extent is unknown or degenerate.
+        :rtype: float | None
+        """
+        if self._level_cv_span is None or iDim >= len(self._level_cv_span):
+            return None
+        if self._level_cv_span[iDim] <= 0.0:
+            return None
+        return (coords[iDim] - self._level_cv_lower[iDim]) / self._level_cv_span[iDim]
+
+    def _applyNormalizedRefinement(self, x:float, y:float, z:float):
+        """Evaluate the refinement coefficient from the normalized controlling variable ranges.
+
+        :return: refinement coefficient
+        :rtype: float
+        """
+        refinement_factor = 1.0
+        if len(self._normalized_refinement_dims) == 0:
+            return refinement_factor
+        coords = np.array([x, y, z])
+        for iDim, lower, upper, c in zip(self._normalized_refinement_dims, self._normalized_lower_bound, \
+                                         self._normalized_upper_bound, self._normalized_refinement_factor):
+            normalized_coord = self._normalizedLevelCoord(iDim, coords)
+            if normalized_coord is None:
+                continue
+            if (normalized_coord >= lower) and (normalized_coord <= upper):
+                refinement_factor = min(refinement_factor, c)
+        return refinement_factor
+
     def meshTableLevel(self, level_index:int):
         """Discretize and interpolate the fluid data of a single table level.
 
@@ -248,6 +507,7 @@ class SU2TableGenerator_Base:
         """
 
         pointCloud = self._createPointCloudForTableLevel(self._table_levels[level_index])
+        self._setLevelBounds(pointCloud)
 
         mesher = self._initiateMesher()
         if self.__run_parallel:
@@ -345,7 +605,7 @@ class SU2TableGenerator_Base:
         :return: refinement coefficient
         :rtype: float
         """
-        refinement_factor = 1.0
+        refinement_factor = self._applyNormalizedRefinement(x, y, z)
         if len(self._conditional_refinement_indices) > 0:
             cv_input = np.array([x,y,z])
             fluid_state_data = self._fluid_data_interpolator(cv_input[:self._nDim_table])
@@ -615,6 +875,18 @@ class SU2TableGenerator_Base:
         self.__smoothingLevel = smoothening_factor
         return
     
+    def setHullEdgeAnchoring(self, anchor_hull_edges:bool=True):
+        """Restate the exactly known values on the perimeter of each table level.
+
+        Enabled by default. Disable it only to reproduce a table generated before anchoring
+        existed; see _applyHullEdgeAnchors for what it corrects.
+
+        :param anchor_hull_edges: whether to anchor the hull edges, defaults to True
+        :type anchor_hull_edges: bool, optional
+        """
+        self.__anchorHullEdges = anchor_hull_edges
+        return
+
     def setVerbosity(self, verbosity_level:int=1):
         """Specify verbosity level used to print information in the terminal.
 

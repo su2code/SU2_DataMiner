@@ -273,3 +273,107 @@ def FiniteDifferenceDerivative(y:np.ndarray[float], x:np.ndarray[float]):
     else:
         dydx[-1] = (dx2_1 * y_pp + (dx2_2 - dx2_1)*y_0 - dx2_2*y_p)/(dx_1*dx_2*(dx_1 - dx_2))
     return dydx
+
+
+def ComputeScalarDivergenceSources(grid:np.ndarray, rho:np.ndarray, T:np.ndarray, cp:np.ndarray,
+                                   k_lam:np.ndarray, Y_k:np.ndarray, D_k:np.ndarray, DT_k:np.ndarray,
+                                   h_k:np.ndarray, species_names:list[str], major_species:list[str],
+                                   pv_species:list[str], pv_weights:list[float],
+                                   mixfrac_coeffs:np.ndarray):
+    """Compute the preferential diffusion closure sources S_PV, S_Z, S_h (Eq. 16 of Schepers &
+    van Oijen, C&F 280 (2025), model B2) for a 1D flamelet in conservative form.
+
+    The differential (non-unity-Lewis) diffusion flux of each non-major species, in the
+    positive-gradient convention in which the closure enters the CFD as +d/dx(...),
+
+      J_k = rho*(D_k - alpha)*dY_k/dx + (DT_k/T)*dT/dx,   alpha = lambda/(rho*cp),
+
+    matches the sign convention of the runtime Eq. (14) fluxes for the major species
+    (molecular +div(c*(rho*D - lambda/cp) grad Y), Soret +div((DT/T) grad T)). The sources are
+
+      S_phi = d/dx( sum_k c_{phi,k} * J_k ),   k not a major species,
+
+    with the weight INSIDE the divergence — for S_h the species enthalpy h_k(T) varies along
+    the flamelet and taking it outside drops the J_k*dh_k/dx work term, leaving a
+    non-conservative source whose integral does not vanish.
+
+    Discretization: two-point face fluxes J_{i+1/2} divided by the trapezoidal quadrature
+    weights w_i, so that sum_i w_i*S_i telescopes EXACTLY to J(x_N) - J(x_0) on the
+    non-uniform flamelet grid. The end fluxes are evaluated one-sidedly and retained: for
+    freely-propagating flamelets they vanish, for burner-stabilized flamelets the cold-end
+    flux is genuinely non-zero (the flame exchanges mass with the burner face). Because the
+    tabulated source must integrate to zero over every flamelet regardless (it acts away from
+    boundaries in the CFD), the residual J(x_N) - J(x_0) is removed by an |S|-weighted
+    compensation, making the trapezoidal integral of the returned sources exactly zero.
+
+    :return: (S_PV, S_Z, S_h, residuals) with residuals the pre-compensation integrals
+        {"S_PV": float, "S_Z": float, "S_h": float} in the unit of the respective flux.
+    """
+    n_pts = len(grid)
+    dx = np.diff(grid)
+    # Trapezoidal quadrature weights on the non-uniform grid.
+    w = np.zeros(n_pts)
+    w[0] = 0.5 * dx[0]
+    w[-1] = 0.5 * dx[-1]
+    w[1:-1] = 0.5 * (dx[:-1] + dx[1:])
+
+    alpha = k_lam / (rho * cp)
+    coef_fick = rho * (D_k - alpha[np.newaxis, :])   # (n_species, n_pts)
+    coef_soret = DT_k / T[np.newaxis, :]             # (n_species, n_pts)
+    dT_face = np.diff(T) / dx
+
+    weights = {"S_PV": np.zeros(len(species_names)), "S_Z": np.zeros(len(species_names))}
+    for isp, sp in enumerate(species_names):
+        if sp in major_species:
+            continue
+        if sp in pv_species:
+            weights["S_PV"][isp] = pv_weights[pv_species.index(sp)]
+        if mixfrac_coeffs is not None:
+            weights["S_Z"][isp] = mixfrac_coeffs[isp]
+
+    # Summed weighted face fluxes (n_faces = n_pts-1) and one-sided end fluxes.
+    J_face = {"S_PV": np.zeros(n_pts - 1), "S_Z": np.zeros(n_pts - 1), "S_h": np.zeros(n_pts - 1)}
+    J_end = {"S_PV": np.zeros(2), "S_Z": np.zeros(2), "S_h": np.zeros(2)}
+    for isp, sp in enumerate(species_names):
+        if sp in major_species:
+            continue
+        dY_face = np.diff(Y_k[isp, :]) / dx
+        Jk_face = 0.5 * (coef_fick[isp, :-1] + coef_fick[isp, 1:]) * dY_face \
+                + 0.5 * (coef_soret[isp, :-1] + coef_soret[isp, 1:]) * dT_face
+        Jk_0 = coef_fick[isp, 0] * dY_face[0] + coef_soret[isp, 0] * dT_face[0]
+        Jk_N = coef_fick[isp, -1] * dY_face[-1] + coef_soret[isp, -1] * dT_face[-1]
+        for name in ("S_PV", "S_Z"):
+            c = weights[name][isp]
+            if c != 0.0:
+                J_face[name] += c * Jk_face
+                J_end[name] += c * np.array([Jk_0, Jk_N])
+        h_face = 0.5 * (h_k[isp, :-1] + h_k[isp, 1:])
+        J_face["S_h"] += h_face * Jk_face
+        J_end["S_h"] += np.array([h_k[isp, 0] * Jk_0, h_k[isp, -1] * Jk_N])
+
+    sources, residuals = [], {}
+    for name in ("S_PV", "S_Z", "S_h"):
+        S = np.zeros(n_pts)
+        Jf, (J0, JN) = J_face[name], J_end[name]
+        S[0] = (Jf[0] - J0) / w[0]
+        S[1:-1] = np.diff(Jf) / w[1:-1]
+        S[-1] = (JN - Jf[-1]) / w[-1]
+        # Exact telescoping: sum(w*S) = JN - J0. Remove the end-flux residual with an
+        # |S|-weighted compensation so the flamelet-wise integral vanishes identically.
+        #
+        # The compensation rescales the profile by residual/gross, so it is only meaningful
+        # while the end-flux residual is small compared with the gross redistribution the
+        # flamelet performs. On a state that carries no flame structure -- a burner flamelet
+        # that failed to ignite is essentially isothermal -- both quantities are numerical
+        # noise, and the ratio would amplify that noise into a large spurious source. Such a
+        # state has no preferential diffusion structure at all, so the correct source is zero.
+        residual = JN - J0
+        residuals[name] = residual
+        gross = np.sum(w * np.abs(S))
+        if gross > 0.0 and abs(residual) <= gross:
+            S -= np.abs(S) * (residual / gross)
+        elif gross > 0.0:
+            S = np.zeros(n_pts)
+        sources.append(S)
+
+    return sources[0], sources[1], sources[2], residuals

@@ -92,6 +92,72 @@ class FGMVars(Enum):
     Beta_Enth=auto()
     Beta_MixFrac=auto()
 
+# Manifold column names of the preferential diffusion flux terms of model B2 (Schepers &
+# van Oijen, C&F 280 (2025) 114332). These are not FGMVars members because they are generated per
+# (controlling variable, major species) pair, and they are the contract with the CFD solver: SU2's
+# CFluidFlamelet::PreprocessLookUp composes exactly these strings from CONTROLLING_VARIABLE_NAMES
+# and PREFERENTIAL_DIFFUSION_MAJOR_SPECIES, so a rename here must be mirrored there. Keying the
+# names on the controlling variable names rather than on positional tags means a manifold whose
+# controlling variables are named differently stays self-describing.
+
+
+def PDMajorSpeciesName(species:str):
+    """Manifold column holding the mass fraction of a preferential diffusion major species.
+
+    The CFD solver transports no major species; it looks their mass fractions up on the manifold
+    and takes the multi-dimensional gradient of the retrieved field, which is what makes the
+    Eq. (14) flux respond to curvature and to gradients along the flame front.
+    """
+    return "Y-%s" % species
+
+
+def PDMolecularCoefficientName(cv_name:str, species:str):
+    """Manifold column of the Eq. (14) molecular flux coefficient of one major species.
+
+    D_{phi_k,i} = c_{phi_k,i} * (rho*D_i - lambda/cp), the factor multiplying grad(Y_i) in the
+    preferential diffusion flux of controlling variable phi_k. One column per (controlling
+    variable, major species) pair: the summation over species of Eq. (14) is performed by the CFD
+    solver against its own gradients, not pre-contracted here against the 1D flamelet gradients.
+    """
+    return "D_%s_%s" % (cv_name, species)
+
+
+def PDThermalCoefficientName(cv_name:str):
+    """Manifold column of the Eq. (14) thermal (Soret) flux coefficient of a controlling variable.
+
+    D^T_{phi_k} = sum_i c_{phi_k,i} * DT_i over the major species. Unlike the molecular term this
+    summation IS exact in the manifold: every species contribution multiplies the same temperature
+    gradient, so no flamelet gradient is baked in by contracting it here. The 1/T factor of the
+    thermal diffusion flux is left out and applied by the CFD solver with its local temperature.
+    """
+    return "DT_%s" % cv_name
+
+
+def PDClosureSourceName(cv_name:str):
+    """Manifold column of the Eq. (16) closure source of a controlling variable.
+
+    The divergence of the summed preferential diffusion fluxes of the NON-major species, which the
+    CFD applies as a source term. Named "Res_<cv>" after the residual fields of the reference
+    OpenFOAM implementation (prefD<phi>_Res).
+    """
+    return "Res_%s" % cv_name
+
+
+def PDFluxVariableNames(major_species:list[str], controlling_variables:list[str]):
+    """All manifold columns required by the CFD-side Eq. (14) preferential diffusion fluxes.
+
+    :param major_species: major species carrying the resolved preferential diffusion flux.
+    :param controlling_variables: controlling variable names, in solver order.
+    :return: major species mass fractions, molecular coefficients, and thermal coefficients.
+    """
+    if not major_species:
+        return []
+    names = [PDMajorSpeciesName(sp) for sp in major_species]
+    names += [PDMolecularCoefficientName(cv, sp) for cv in controlling_variables for sp in major_species]
+    names += [PDThermalCoefficientName(cv) for cv in controlling_variables]
+    return names
+
+
 FGMSymbols:dict = {FGMVars.ProgressVariable.name : r"Progress variable $(\mathcal{Y})[-]$",\
                    FGMVars.EnthalpyTot.name : r"Total enthalpy $(h)[J \mathrm{kg}^{-1}]$",\
                    FGMVars.MixtureFraction.name : r"Mixture fraction $(Z)[-]$",\
@@ -212,6 +278,23 @@ class DefaultSettings_FGM(DefaultProperties):
 
     preferential_diffusion:bool = False
     run_mixture_fraction:bool = False
+    pd_major_species:list = []  # Species carrying the resolved Eq. (14) flux in the CFD; excluded from the closure sources
+
+    # Preferential diffusion formulation, mirroring SU2's PREFERENTIAL_DIFFUSION_METHOD.
+    # BETA_CORRECTION: the four beta scalars of the constant-Lewis correction (unchanged legacy path).
+    # SOURCE_TERM: model B2 of Schepers & van Oijen, C&F 280 (2025) -- per-species Eq. (14) flux
+    #   coefficients summed by the CFD solver, plus the Eq. (16) closure of the remaining species.
+    #   Selecting it also switches the mixture fraction to the elemental definition of the paper.
+    pd_method:str = "BETA_CORRECTION"
+    pd_methods:list[str] = ["BETA_CORRECTION", "SOURCE_TERM"]
+
+    # Mixture fraction definition. BILGER: Bilger's coupling function (default, legacy).
+    # ELEMENTAL: mass fraction of a single element, normalised to 0 in the oxidiser and 1 in the
+    #   fuel stream (Eq. 11 of Schepers & van Oijen). Both agree exactly on the mixing line and
+    #   differ only for reacted states.
+    mixfrac_definition:str = "BILGER"
+    mixfrac_definitions:list[str] = ["BILGER", "ELEMENTAL"]
+    mixfrac_element:str = None  # None: auto-select the fuel-side element
 
     include_freeflames:bool = True
     include_burnerflames:bool = True

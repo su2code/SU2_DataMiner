@@ -38,7 +38,8 @@ prop_cycle = plt.rcParams["axes.prop_cycle"]
 colors = prop_cycle.by_key()['color']
 
 from Common.DataDrivenConfig import Config_FGM
-from Common.Properties import DefaultSettings_FGM, FGMVars, FGMPlotSymbols
+from Common.Properties import (DefaultSettings_FGM, FGMVars, FGMPlotSymbols,
+                               PDFluxVariableNames, PDClosureSourceName)
 from Data_Generation.FlameletSolvers import FlameletSolverDict, FlameletSolver_Cantera
 
 class FlameletConcatenator:
@@ -76,11 +77,16 @@ class FlameletConcatenator:
 
     __TD_flamelet_data:np.ndarray = None
 
-    # Differential diffusion data to search for in flamelet data.
-    __PD_train_vars = [FGMVars.Beta_ProgVar.name, \
-                       FGMVars.Beta_Enth_Thermal.name, \
-                       FGMVars.Beta_Enth.name, \
-                       FGMVars.Beta_MixFrac.name]
+    # Differential diffusion data to search for in flamelet data. The four beta scalars of the
+    # constant-Lewis correction are always collected; when preferential diffusion major species
+    # are configured, the Eq. (14) flux terms of model B2 are appended (see __SynchronizeSettings).
+    __PD_beta_vars = [FGMVars.Beta_ProgVar.name, \
+                      FGMVars.Beta_Enth_Thermal.name, \
+                      FGMVars.Beta_Enth.name, \
+                      FGMVars.Beta_MixFrac.name]
+
+    __PD_flux_vars:list[str] = []
+    __PD_train_vars:list[str] = list(__PD_beta_vars)
 
     __PD_flamelet_data:np.ndarray = None
 
@@ -96,7 +102,14 @@ class FlameletConcatenator:
 
     # Progress variable source term name.
     __PPV_train_vars = [FGMVars.ProdRateTot_PV.name]
-    __Sources_vars = [__PPV_train_vars[0]]
+
+    # Preferential diffusion closure sources (Eq. 16 of Schepers & van Oijen, C&F 280 (2025)), one
+    # per controlling variable and present only for the SOURCE_TERM method. Rebuilt in
+    # __SynchronizeSettings; the class-level default keeps the BETA_CORRECTION path free of them.
+    __scalar_source_vars:list[str] = []
+    __N_scalar_sources = 1  # ProdRateTot_PV plus the closures appended in __SynchronizeSettings
+
+    __Sources_vars = [__PPV_train_vars[0]] + __scalar_source_vars
     for s in __Species_in_FGM:
         __Sources_vars.append("Y_dot_pos-"+s)
         __Sources_vars.append("Y_dot_neg-"+s)
@@ -132,8 +145,23 @@ class FlameletConcatenator:
 
         [self.__mix_status_min, self.__mix_status_max] = self.__Config.GetMixtureBounds()
 
-        self.SetAuxilarySpecies(self.__Config.GetPassiveSpecies())
         self.SetLookUpVars(self.__Config.GetLookUpVariables())
+
+        # Eq. (14) preferential diffusion flux terms of the configured major species. Without
+        # these columns the manifold only carries the closure sources, which pre-contract the
+        # species summation against the 1D flamelet gradients -- the CFD solver then has no way
+        # to form the flux from its own, multi-dimensional gradients.
+        source_term_method = (self.__Config.GetPreferentialDiffusionMethod() == "SOURCE_TERM")
+        controlling_variables = self.__Config.GetControllingVariables()
+        if source_term_method:
+            self.__PD_flux_vars = PDFluxVariableNames(self.__Config.GetPDMajorSpecies(), controlling_variables)
+            self.__scalar_source_vars = [PDClosureSourceName(cv) for cv in controlling_variables]
+        else:
+            self.__PD_flux_vars = []
+            self.__scalar_source_vars = []
+        self.__PD_train_vars = list(self.__PD_beta_vars) + self.__PD_flux_vars
+        self.__N_scalar_sources = 1 + len(self.__scalar_source_vars)
+        self.SetAuxilarySpecies(self.__Config.GetPassiveSpecies())
 
         self.__controlling_variables = []
         for c in self.__Config.GetControllingVariables():
@@ -177,7 +205,7 @@ class FlameletConcatenator:
         self.__TD_flamelet_data = np.zeros([self.__nFlamelets * self.__Np_per_flamelet, len(self.__TD_train_vars)])
         if self.__Config.PreferentialDiffusion():
             self.__PD_flamelet_data = np.zeros([self.__nFlamelets * self.__Np_per_flamelet, len(self.__PD_train_vars)])
-        self.__Sources_flamelet_data = np.zeros([self.__nFlamelets * self.__Np_per_flamelet, 1 + 4 * len(self.__Species_in_FGM)])
+        self.__Sources_flamelet_data = np.zeros([self.__nFlamelets * self.__Np_per_flamelet, self.__N_scalar_sources + 4 * len(self.__Species_in_FGM)])
         self.__LookUp_flamelet_data = np.zeros([self.__nFlamelets * self.__Np_per_flamelet, len(self.__LookUp_vars)])
 
         return
@@ -434,7 +462,7 @@ class FlameletConcatenator:
         self.__Species_in_FGM = []
         for s in species_input:
             self.__Species_in_FGM.append(s)
-        self.__Sources_vars = [self.__PPV_train_vars[0]]
+        self.__Sources_vars = [self.__PPV_train_vars[0]] + self.__scalar_source_vars
         for s in species_input:
             self.__Sources_vars.append("Y_dot_pos-"+s)
             self.__Sources_vars.append("Y_dot_neg-"+s)
@@ -457,10 +485,16 @@ class FlameletConcatenator:
     def SetLookUpVars(self, input:list[str]):
         """Define passive look-up variables to be included in the manifold data.
 
+        Stored both on the configuration, so the selection persists, and on the concatenator,
+        which is what sizes the output arrays and reads the columns out of each flamelet.
+        Setting only the configuration leaves the concatenator's list at its empty default and
+        every requested look-up variable is silently dropped from the manifold.
+
         :param input: list of passive look-up variables.
         :type input: list[str]
         """
         self.__Config.SetLookUpVariables(input)
+        self.__LookUp_vars = list(input)
         return
 
     def SetFlameletDir(self, input:str):
@@ -560,6 +594,18 @@ class FlameletConcatenator:
         PD_data[:, 1] = beta_h1_flamelet
         PD_data[:, 2] = beta_h2_flamelet
         PD_data[:, 3] = beta_z_flamelet
+
+        # The Eq. (14) flux terms are written per flamelet point by the solver
+        # (FlameletSolver_Cantera._collectPreferentialDiffusionData) and are carried through
+        # untouched: each is a coefficient the CFD multiplies by its own gradient.
+        missing = [var for var in self.__PD_flux_vars if var not in solutionData]
+        if missing:
+            raise Exception("Preferential diffusion major species are configured, but the flamelet "
+                            "data are missing the Eq. (14) flux columns %s. Regenerate the flamelet "
+                            "data after calling Config.SetPDMajorSpecies(...); flamelets written "
+                            "before that call only carry the closure sources." % ", ".join(missing))
+        for iVar, var in enumerate(self.__PD_flux_vars):
+            PD_data[:, len(self.__PD_beta_vars) + iVar] = solutionData[var]
         return PD_data
     
     def __retrieveSourceTerms(self, solutionData:pd.DataFrame):
@@ -585,15 +631,26 @@ class FlameletConcatenator:
                 species_destruction_rate[:, iSp] = solutionData["Y_dot_neg-%s" % Sp]
                 species_net_rate[:, iSp] = solutionData["Y_dot_net-%s" % Sp]
 
-        Sources_data = np.zeros([nP_flamelet, 1 + 4 * len(self.__Species_in_FGM)])
+        Sources_data = np.zeros([nP_flamelet, self.__N_scalar_sources + 4 * len(self.__Species_in_FGM)])
         ppv_flamelet = self.__Config.ComputeProgressVariable_Source(list(solutionData.keys()), solutionData.values)
         Sources_data[:, 0] = ppv_flamelet
 
+        # Preferential diffusion closure sources, carried through unmodified: they are
+        # divergences of diffusion fluxes and integrate to zero over each flamelet, so any
+        # truncation of them re-introduces a spurious net source in the CFD.
+        missing = [var for var in self.__scalar_source_vars if var not in solutionData]
+        if missing:
+            raise Exception("The SOURCE_TERM preferential diffusion method is selected, but the flamelet "
+                            "data are missing the closure source columns %s. Regenerate the flamelet "
+                            "data with Config.SetPreferentialDiffusionMethod(\"SOURCE_TERM\")." % ", ".join(missing))
+        for i_sc, sc_var in enumerate(self.__scalar_source_vars):
+            Sources_data[:, 1 + i_sc] = solutionData[sc_var]
+
         for iSp in range(len(self.__Species_in_FGM)):
-            Sources_data[:, 1 + 4*iSp] = species_production_rate[:, iSp]
-            Sources_data[:, 1 + 4*iSp + 1] = species_destruction_rate[:, iSp]
-            Sources_data[:, 1 + 4*iSp + 2] = species_net_rate[:, iSp]
-            Sources_data[:, 1 + 4*iSp + 3] = species_mass_fraction[:, iSp]
+            Sources_data[:, self.__N_scalar_sources + 4*iSp] = species_production_rate[:, iSp]
+            Sources_data[:, self.__N_scalar_sources + 4*iSp + 1] = species_destruction_rate[:, iSp]
+            Sources_data[:, self.__N_scalar_sources + 4*iSp + 2] = species_net_rate[:, iSp]
+            Sources_data[:, self.__N_scalar_sources + 4*iSp + 3] = species_mass_fraction[:, iSp]
         
         sourceterm_zero_line_numbers = np.zeros(nP_flamelet, dtype=bool)
         sourceterm_zero_line_numbers[0]  = True

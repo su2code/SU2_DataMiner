@@ -442,7 +442,7 @@ def ComputeFlameletData(Config:Config_FGM, run_parallel:bool=False, N_processors
     mix_bounds = Config.GetMixtureBounds()
     Np_unb_mix = Config.GetNpMix()
     if Config.GetMixtureStatus():
-        mix_status_stoch = Config.GetMixtureFractionConstant()
+        mix_status_stoch = Config.GetStoichiometricMixtureFraction()
     else:
         mix_status_stoch = 1.0
     if mix_bounds[0] < mix_status_stoch and mix_bounds[1] > mix_status_stoch:
@@ -499,7 +499,7 @@ def ComputeBoundaryData(Config:Config_FGM, run_parallel:bool=False, N_processors
 
 
     Np_unb_mix = Config_local.GetNpMix()
-    mix_status_stoch = Config_local.GetMixtureFractionConstant()
+    mix_status_stoch = Config_local.GetStoichiometricMixtureFraction()
     mixture_range_lean = np.linspace(0, mix_status_stoch, int(Np_unb_mix/2))
     mixture_range_rich = np.linspace(mix_status_stoch, 1, int(Np_unb_mix/2)+1)
     mixture_range = np.append(mixture_range_lean, mixture_range_rich[1:])
