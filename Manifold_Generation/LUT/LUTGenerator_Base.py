@@ -766,7 +766,7 @@ class SU2TableGenerator_Base:
             self.__printmsg("Saved figure %s" % save_path)
         if show:
             plt.show()
-        if else:
+        else:
             plt.close(fig)
 
         return

@@ -442,10 +442,6 @@ class SU2TableGenerator_FGM(SU2TableGenerator_Base):
         sign of the production and consumption terms over the whole table.
         """
         name_pv = DefaultSettings_FGM.name_pv
-        if name_pv not in self._table_vars:
-            print("Source term clamping: %s is not part of the table data, skipping." % name_pv)
-            return
-
         vars_net, vars_pos, vars_neg = self.__sourceTermsToClamp()
         vars_to_clamp = vars_net + vars_pos + vars_neg
         if len(vars_to_clamp) == 0:
