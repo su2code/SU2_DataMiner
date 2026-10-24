@@ -3,7 +3,6 @@ import gmsh
 from concave_hull import concave_hull, concave_hull_indexes
 from collections.abc import Callable
 from Common.CommonMethods import shoelace, FiniteDifferenceDerivative
-from shapely.geometry import Point, Polygon
 
 def default_refinement_function(this, x:float, y:float, z:float):
     return 1.0
@@ -13,6 +12,11 @@ class Mesh2DPlane:
     __pointCloud:np.ndarray[float] = None
     _pointCloud_hullNodes:np.ndarray[float] = None
     __mesh_along_coords:list[int] = [0, 1]
+    __boundary_polyline:np.ndarray[float] = None
+    __boundary_point_tolerance:float = 1e-6           # Coincidence tolerance, in base cell sizes.
+    __refinement_field_nodes:np.ndarray[float] = None   # Lattice the refinement field is sampled on.
+    __refinement_field_values:np.ndarray[float] = None  # Refinement coefficient at each lattice node.
+    __refinement_field_tags:tuple = None                # Gmsh view and field currently holding it.
 
     _gmsh_geo:gmsh.model.geo = None
     _gmsh_mesher:gmsh.model.mesh = None
@@ -47,6 +51,9 @@ class Mesh2DPlane:
             
         self.__meshNodes, self.__connectivity, self.__hullNodeIDs = self.__mesh2D()
         self._gmsh_geo.synchronize()
+
+        # Discard the last view, as views outlive the model they were added to.
+        self.__clearRefinementField()
         return
     
     def __optimizeMeshResolution(self):
@@ -100,11 +107,14 @@ class Mesh2DPlane:
         hullTags = self.__extractHulltags()
         return meshNodeCoords, triaTags, hullTags
     
-    def __checkPlanarCoords(self):
+    def __constantCoordIndex(self):
         all_dims = [0, 1, 2]
         for iDim in self.__mesh_along_coords:
             all_dims.remove(iDim)
-        const_dim = all_dims[0]
+        return all_dims[0]
+
+    def __checkPlanarCoords(self):
+        const_dim = self.__constantCoordIndex()
         equal_Z_coords = np.all(self.__pointCloud[:, const_dim]==self.__pointCloud[0, const_dim])
         if not equal_Z_coords:
             raise Exception("Point cloud does not contain planar coordinates")
@@ -118,7 +128,10 @@ class Mesh2DPlane:
     
 
     def __findHullNodes(self):
-        
+
+        if self.__boundary_polyline is not None:
+            return self.__hullNodesFromBoundaryPolyline()
+
         planarCoords_PointCloud = self.__pointCloud[:, self.__mesh_along_coords]
         hullIndices = concave_hull_indexes(planarCoords_PointCloud, length_threshold=self._base_cell_size)
 
@@ -126,7 +139,59 @@ class Mesh2DPlane:
         self.__plane_area = shoelace(planarCoords_hull)
 
         return self.__pointCloud[hullIndices]
-    
+
+    def __hullNodesFromBoundaryPolyline(self):
+        """Use the externally provided boundary polyline as the plane perimiter instead of a hull of the point cloud.
+        """
+        planarCoords_hull = self.__boundary_polyline
+        self.__plane_area = shoelace(planarCoords_hull)
+
+        const_dim = self.__constantCoordIndex()
+        hull_coords = np.zeros([len(planarCoords_hull), np.shape(self.__pointCloud)[1]])
+        hull_coords[:, self.__mesh_along_coords] = planarCoords_hull
+        hull_coords[:, const_dim] = self.__pointCloud[0, const_dim]
+
+        return hull_coords
+
+    def setBoundaryPolyline(self, boundary_coords_2D:np.ndarray[float]):
+        """Provide an ordered polyline describing the perimiter of the 2D plane, used instead of a hull around the point cloud. Coincident points are dropped.
+
+        :param boundary_coords_2D: planar coordinates of the perimiter, ordered along the perimiter. The
+            closing segment between the last and first point is added automatically.
+        :type boundary_coords_2D: np.ndarray[float]
+        :raises Exception: if the polyline is not a two-column array.
+        :raises Exception: if the polyline describes fewer than three points.
+        :raises Exception: if fewer than three unique points remain after dropping coincident ones.
+        """
+        polyline = np.asarray(boundary_coords_2D, dtype=float)
+        if polyline.ndim != 2 or np.shape(polyline)[1] != len(self.__mesh_along_coords):
+            raise Exception("Boundary polyline should be provided as an array with %i columns" % len(self.__mesh_along_coords))
+        if len(polyline) < 3:
+            raise Exception("Boundary polyline should describe at least three points")
+
+        polyline = self.__uniqueBoundaryPoints(polyline)
+        if len(polyline) < 3:
+            raise Exception("Boundary polyline should describe at least three unique points")
+        self.__boundary_polyline = polyline
+        return
+
+    def __uniqueBoundaryPoints(self, polyline:np.ndarray[float]):
+        """Drop consecutive points of a perimiter polyline that coincide, including the repeated point
+        of an explicitly closed polyline.
+        """
+        tolerance = self.__boundary_point_tolerance * self._base_cell_size
+
+        retained = [polyline[0]]
+        for point in polyline[1:]:
+            if np.linalg.norm(point - retained[-1]) > tolerance:
+                retained.append(point)
+
+        # The mesher adds the closing segment, so the polyline should not end where it started.
+        if len(retained) > 1 and np.linalg.norm(retained[-1] - retained[0]) <= tolerance:
+            retained.pop()
+
+        return np.array(retained)
+
     def __createHullCurvLoop(self, hull_coords:np.ndarray[float]):
 
         hull_pts = self.__createHullPointEntities(hull_coords)
@@ -253,11 +318,78 @@ class Mesh2DPlane:
         self._gmsh_mesher.clear()
         gmsh.option.setNumber("Mesh.MeshSizeMax", self._base_cell_size)
 
+        if self.__refinement_field_values is not None:
+            self.__prepareRefinementField()
+            return
+
         def meshSizeCallback(dim,tag,x,y,z,lc):
             refinement_factor = self.refinement_function(x, y, z)
             return self._base_cell_size * refinement_factor
         
         self._gmsh_mesher.setSizeCallback(meshSizeCallback)
+        return
+
+    def setRefinementField(self, field_nodes:np.ndarray[float], refinement_factors:np.ndarray[float]):
+        """Provide the local refinement sampled on a lattice, which gmsh interpolates instead of calling back into a function.
+
+        :param field_nodes: lattice the refinement is sampled on, as a regular grid of planar
+            coordinates ordered row by row.
+        :type field_nodes: np.ndarray[float]
+        :param refinement_factors: refinement coefficient at each lattice node.
+        :type refinement_factors: np.ndarray[float]
+        :raises Exception: if the lattice is not a square grid of at least two nodes per direction.
+        :raises Exception: if the number of refinement coefficients does not match the lattice.
+        """
+        nodes_per_direction = int(round(np.sqrt(len(field_nodes))))
+        if (nodes_per_direction < 2) or (nodes_per_direction**2 != len(field_nodes)):
+            raise Exception("Refinement field should be sampled on a square lattice of at least two nodes per direction")
+        if len(refinement_factors) != len(field_nodes):
+            raise Exception("Number of refinement coefficients does not match the refinement field lattice")
+
+        self.__refinement_field_nodes = np.reshape(np.asarray(field_nodes, dtype=float)[:, :2], \
+                                                   (nodes_per_direction, nodes_per_direction, 2))
+        self.__refinement_field_values = np.reshape(np.asarray(refinement_factors, dtype=float), \
+                                                    (nodes_per_direction, nodes_per_direction))
+        return
+
+    def __prepareRefinementField(self):
+        """Hand gmsh the local cell size as a background field built from the sampled refinement, rescaled by the coarse cell size.
+        """
+        self.__clearRefinementField()
+
+        cell_size = self._base_cell_size * self.__refinement_field_values
+
+        # One quadrangle per lattice cell, carrying the cell size at its four corners.
+        x, y = self.__refinement_field_nodes[:, :, 0], self.__refinement_field_nodes[:, :, 1]
+        corners = [(slice(None, -1), slice(None, -1)), (slice(None, -1), slice(1, None)),
+                   (slice(1, None), slice(1, None)), (slice(1, None), slice(None, -1))]
+        quadrangles = np.stack([x[c] for c in corners] + [y[c] for c in corners] \
+                               + [np.zeros_like(x[corners[0]])]*4 \
+                               + [cell_size[c] for c in corners], axis=-1)
+
+        view_tag = gmsh.view.add("cell size")
+        gmsh.view.addListData(view_tag, "SQ", quadrangles[:, :, 0].size, \
+                              np.reshape(quadrangles, -1).tolist())
+
+        field_tag = self._gmsh_mesher.field.add("PostView")
+        self._gmsh_mesher.field.setNumber(field_tag, "ViewTag", view_tag)
+        self._gmsh_mesher.field.setAsBackgroundMesh(field_tag)
+        self.__refinement_field_tags = (view_tag, field_tag)
+
+        # A background field only governs the cell size once gmsh stops deriving it from the geometry.
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+        return
+
+    def __clearRefinementField(self):
+        """Discard the view and field of a previous meshing pass, which would otherwise accumulate."""
+        if self.__refinement_field_tags is None:
+            return
+        view_tag, field_tag = self.__refinement_field_tags
+        self._gmsh_mesher.field.remove(field_tag)
+        gmsh.view.remove(view_tag)
+        self.__refinement_field_tags = None
         return
     
     def setRefinementFunction(self, function_input:Callable):
@@ -423,6 +555,8 @@ class MeshThermodynamicPlane(Mesh2DPlane):
     
 
     def __clipSaturationCurveToPlane(self, pts_offset_lower:np.ndarray[float], pts_offset_upper:np.ndarray[float]):
+        # Imported here, as meshing a table plane does not require shapely.
+        from shapely.geometry import Point, Polygon
 
         hull_pts_orig = concave_hull(self._pointCloud_hullNodes, length_threshold=self._base_cell_size)
         polygon_thermodynamic_plane = Polygon(hull_pts_orig)

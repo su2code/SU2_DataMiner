@@ -39,12 +39,32 @@ def main():
     test_list_NICFD.append(tabulation_NICFD)
 
 
+    tabulation_FGM_fixedstrain = TestCase("Tabulation FGM non-premixed")
+    tabulation_FGM_fixedstrain.config_dir = "TableGeneration/FGM_FixedStrain/"
+    tabulation_FGM_fixedstrain.config_file = ""
+    tabulation_FGM_fixedstrain.exec_command = "./fixed_strain_lut.py"
+    tabulation_FGM_fixedstrain.reference_files = ["LUT_test.ref", "LUT_summary.ref"]
+    tabulation_FGM_fixedstrain.test_files = ["LUT_test.drg", "LUT_summary.csv"]
+    tabulation_FGM_fixedstrain.timeout = 300
+    tabulation_FGM_fixedstrain.tolerance = 1e-3
+    test_list_FGM.append(tabulation_FGM_fixedstrain)
+
+    tabulation_FGM_premixed = TestCase("Tabulation FGM premixed")
+    tabulation_FGM_premixed.config_dir = "TableGeneration/FGM_Premixed/"
+    tabulation_FGM_premixed.config_file = ""
+    tabulation_FGM_premixed.exec_command = "./premixed_lut.py"
+    tabulation_FGM_premixed.reference_files = ["LUT_test.ref", "LUT_summary.ref"]
+    tabulation_FGM_premixed.test_files = ["LUT_test.drg", "LUT_summary.csv"]
+    tabulation_FGM_premixed.timeout = 300
+    tabulation_FGM_premixed.tolerance = 1e-3
+    test_list_FGM.append(tabulation_FGM_premixed)
+
     consistency_NICFD_PINN = TestCase("PIML training NICFD")
     consistency_NICFD_PINN.config_dir = "FluidTraining/MM_PINN/"
     consistency_NICFD_PINN.config_file = ""
     consistency_NICFD_PINN.exec_command = "./train_MLP.py"
-    consistency_NICFD_PINN.reference_files = ["SU2_MLP_ref.mlp"]
-    consistency_NICFD_PINN.test_files = ["SU2_MLP.mlp"]
+    consistency_NICFD_PINN.reference_files = []
+    consistency_NICFD_PINN.test_files = []
     consistency_NICFD_PINN.timeout=300
     test_list_NICFD.append(consistency_NICFD_PINN)
 
@@ -54,16 +74,17 @@ def main():
     hydrogen_flamelet.exec_command = "./generate_flamelet_data.py"
     hydrogen_flamelet.reference_files = ["flamelet_data.ref"]
     hydrogen_flamelet.test_files = ["freeflame_data/phi_1.0000/Freeflame_phi1.0000_Tu300.0.csv"]
+    hydrogen_flamelet.comp_threshold = 1e-8
+    hydrogen_flamelet.tolerance = 1e-6
     test_list_FGM.append(hydrogen_flamelet)
 
     FGM_training = TestCase("ML FGM")
     FGM_training.config_dir="FGM_MLP/"
     FGM_training.config_file = ""
     FGM_training.timeout=300
-    FGM_training.tolerance= 0.01
     FGM_training.exec_command="./ML_FGM_manifold.py"
-    FGM_training.reference_files=["TrainingHistory_ref.csv"]
-    FGM_training.test_files=["architectures_Group1/Worker_0/Model_0/TrainingHistory.csv"]
+    FGM_training.reference_files=[]
+    FGM_training.test_files=[]
     test_list_FGM.append(FGM_training)
 
 

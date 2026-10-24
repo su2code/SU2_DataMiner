@@ -1,8 +1,8 @@
 
-from Common.DataDrivenConfig import FlameletAIConfig
+from Common.DataDrivenConfig import Config_FGM
 import os
 
-Config = FlameletAIConfig()
+Config = Config_FGM()
 Config.SetConfigName("TableGeneration")
 
 # Hydrogen-air flamelets with equivalence ratio between 0.3 and 0.7

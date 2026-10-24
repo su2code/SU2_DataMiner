@@ -1,0 +1,5 @@
+LUT_test.drg
+LUT_test.vtk
+LUT_summary.csv
+__pycache__/*
+*.log

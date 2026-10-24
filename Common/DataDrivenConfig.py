@@ -786,10 +786,14 @@ class Config_FGM(Config):
     __generate_extra_interpolated_burnerflames:bool = True                    # Generate extra interpolated burner-stabilized flamelets
     __generate_equilibrium:bool = DefaultSettings_FGM.include_equilibrium     # Generate chemical equilibrium data
     __generate_counterflames:bool = DefaultSettings_FGM.include_counterflames   # Generate counter-flow diffusion flamelets.
+    __counterflow_strain_rate:float = DefaultSettings_FGM.counterflow_strain_rate   # Global strain rate [1/s] to hold counterflow flames at, None to sweep the strain rate.
 
     __flamelet_types:list[str] = [FlameletSolverOptions[0]]
 
     __write_MATLAB_files:bool = False  # Write TableGenerator compatible flamelet files.
+    __custom_cv_set:bool = False       # Controlling variables were selected explicitly rather than derived from the mixture bounds.
+    __save_mole_fractions:bool = DefaultSettings_FGM.save_mole_fractions  # Save mole fractions (X-species) in flamelet CSV output.
+    __restart_from_existing_flamelets:bool = DefaultSettings_FGM.restart_from_existing_flamelets  # Skip re-solving flamelet points whose output CSV already exists.
 
     gas:ct.Solution = None  # Cantera solution object.
     __species_in_mixture:list[str] = None # Species names in mixture.
@@ -859,11 +863,16 @@ class Config_FGM(Config):
             self.__dict__ = loaded_config.__dict__.copy()
             print("Loaded configuration file with name " + loaded_config.GetConfigName())
         else:
+            # Assigned here so the list is an instance attribute that survives SaveConfig round trips.
+            self.__flamelet_types = [FlameletSolverOptions[0]]
+
             self.SetAlphaExpo(DefaultSettings_FGM.init_learning_rate_expo)
             self.SetLRDecay(DefaultSettings_FGM.learning_rate_decay)
             self.SetBatchExpo(DefaultSettings_FGM.batch_size_exponent)
             self.SetHiddenLayerArchitecture(DefaultSettings_FGM.hidden_layer_architecture)
-            self.SetControllingVariables(DefaultSettings_FGM.controlling_variables)
+            # Seeding the default is not an explicit selection; the mixture bounds still settle the controlling variables.
+            self.__custom_cv_set = False
+            super().SetControllingVariables(DefaultSettings_FGM.controlling_variables)
 
             print("Generating empty SU2 DataMiner configuration for FGM")
 
@@ -881,7 +890,26 @@ class Config_FGM(Config):
         if DefaultSettings_FGM.name_pv not in controlling_variables:
             raise Exception(DefaultSettings_FGM.name_pv + " should be in the controlling variables")
         super().SetControllingVariables(controlling_variables)
+        self.__custom_cv_set = True
 
+        return
+
+    def __deriveControllingVariables(self):
+        """Derive the controlling variables from the mixture status bounds. A single mixture is described
+        by progress variable and total enthalpy; a range of mixtures needs the mixture fraction as well.
+
+        The derivation is skipped once the controlling variables have been set explicitly, so that an
+        explicit selection is not silently undone by a later change of the mixture bounds.
+        """
+        if self.__custom_cv_set:
+            return
+
+        if self.__mix_status_lower == self.__mix_status_upper:
+            derived_cv = [FGMVars.ProgressVariable.name, FGMVars.EnthalpyTot.name]
+        else:
+            derived_cv = [FGMVars.ProgressVariable.name, FGMVars.EnthalpyTot.name, FGMVars.MixtureFraction.name]
+
+        super().SetControllingVariables(derived_cv)
         return
 
     def __SynchronizeSettings(self):
@@ -925,10 +953,7 @@ class Config_FGM(Config):
 
         self.SetAverageLewisNumbers()
 
-        if self.__mix_status_lower==self.__mix_status_upper:
-            self.SetControllingVariables([FGMVars.ProgressVariable.name, FGMVars.EnthalpyTot.name])
-        else:
-            self.SetControllingVariables([FGMVars.ProgressVariable.name, FGMVars.EnthalpyTot.name, FGMVars.MixtureFraction.name])
+        self.__deriveControllingVariables()
         return
 
     def GetConstSpecieLewisNumbers(self):
@@ -968,7 +993,10 @@ class Config_FGM(Config):
         if self.__generate_equilibrium:
             print("-Chemical equilibrium data")
         if self.__generate_counterflames:
-            print("-Counter-flow diffusion flamelet data")
+            if self.GetCounterFlowFixedStrain():
+                print("-Counter-flow diffusion flamelet data (fixed strain rate: %.1f 1/s)" % self.__counterflow_strain_rate)
+            else:
+                print("-Counter-flow diffusion flamelet data")
         print("")
 
         print("Flamelet manifold data characteristics: ")
@@ -1257,6 +1285,9 @@ class Config_FGM(Config):
             self.__mix_status_lower = mix_lower
             self.__mix_status_upper = mix_upper
 
+        # Re-derive the controlling variables, as they follow from the mixture bounds.
+        self.__deriveControllingVariables()
+
         self.SetAverageLewisNumbers()
 
         return
@@ -1499,40 +1530,48 @@ class Config_FGM(Config):
 
         if flamelet_type not in FlameletSolverOptions:
             raise Exception("%s is not recognized as a viable flamelet type" % flamelet_type)
-        
+
         if flamelet_type not in self.__flamelet_types:
             self.__flamelet_types.append(flamelet_type)
-        
+
         return
 
     def setFlameletTypes(self, flamelet_types:list[str]):
         self.__flamelet_types = flamelet_types.copy()
         self.__checkFlameletTypes()
         return
-    
+
     def __checkFlameletTypes(self):
         self.__generate_burnerflames = "BURNERFLAME" in self.__flamelet_types
         self.__generate_freeflames = "FREEFLAME" in self.__flamelet_types
         self.__generate_counterflames = "COUNTERFLAME" in self.__flamelet_types
         self.__generate_equilibrium = "EQUILIBRIUM" in self.__flamelet_types
-        self.__generate_extra_interpolated_burnerflames = "BURNERFLAME_INT" in self.__flamelet_types
+        self.__generate_extra_interpolated_burnerflames = "INT_BURNERFLAME" in self.__flamelet_types
         return
-    
+
     def excludeFlameletType(self, flamelet_type:str):
         if flamelet_type not in FlameletSolverOptions:
             raise Exception("%s is not recognized as a viable flamelet type" % flamelet_type)
-        
+
         if flamelet_type in self.__flamelet_types:
             self.__flamelet_types.remove(flamelet_type)
 
         self.__checkFlameletTypes()
-        if len(self.__flamelet_types) == 0:
-            raise Exception("At least one flamelet type should be included in the manifold")
-    
+        # The list may be empty while Run*Flames calls are in sequence; checkFlameletTypesSelected validates it.
+
         return
 
     def getFlameletTypes(self):
         return self.__flamelet_types
+
+    def checkFlameletTypesSelected(self):
+        """Verify that the manifold includes at least one flamelet type.
+
+        :raises Exception: if no flamelet type is selected.
+        """
+        if len(self.__flamelet_types) == 0:
+            raise Exception("At least one flamelet type should be included in the manifold")
+        return
 
     def RunFreeFlames(self, input:bool=DefaultSettings_FGM.include_freeflames):
         """
@@ -1543,7 +1582,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_freeflames = input
-        self.includeFlameletType("FREEFLAME")
+        if input:
+            self.includeFlameletType("FREEFLAME")
+        else:
+            self.excludeFlameletType("FREEFLAME")
         return
     def RunBurnerFlames(self, input:bool=DefaultSettings_FGM.include_burnerflames):
         """
@@ -1554,7 +1596,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_burnerflames = input
-        self.includeFlameletType("BURNERFLAME")
+        if input:
+            self.includeFlameletType("BURNERFLAME")
+        else:
+            self.excludeFlameletType("BURNERFLAME")
         return
 
     def RunEquilibrium(self, input:bool=DefaultSettings_FGM.include_equilibrium):
@@ -1566,7 +1611,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_equilibrium = input
-        self.includeFlameletType("EQUILIBRIUM")
+        if input:
+            self.includeFlameletType("EQUILIBRIUM")
+        else:
+            self.excludeFlameletType("EQUILIBRIUM")
         return
 
     def RunCounterFlames(self, input:bool=DefaultSettings_FGM.include_counterflames):
@@ -1578,7 +1626,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_counterflames = input
-        self.includeFlameletType("COUNTERFLAME")
+        if input:
+            self.includeFlameletType("COUNTERFLAME")
+        else:
+            self.excludeFlameletType("COUNTERFLAME")
         return
 
     def RunExtraInterpolatedBurnerFlames(self, input:bool=True):
@@ -1590,7 +1641,10 @@ class Config_FGM(Config):
 
         """
         self.__generate_extra_interpolated_burnerflames = input
-        self.includeFlameletType("INT_BURNERFLAME")
+        if input:
+            self.includeFlameletType("INT_BURNERFLAME")
+        else:
+            self.excludeFlameletType("INT_BURNERFLAME")
         return
 
     def GenerateFreeFlames(self):
@@ -1629,6 +1683,42 @@ class Config_FGM(Config):
         """
         return self.__generate_counterflames
 
+    def SetCounterFlowStrainRate(self, strain_rate:float=DefaultSettings_FGM.counterflow_strain_rate):
+        """
+        Hold counter-flow diffusion flames at a fixed global strain rate.
+
+        Setting a strain rate makes the counter-flow solver keep it fixed while
+        sweeping over the reactant temperature range. Passing None instead lets
+        the solver sweep the strain rate, which is the default.
+
+        :param strain_rate: global strain rate in 1/s, or None to sweep the strain rate.
+        :type strain_rate: float, optional
+        :raises Exception: if a strain rate is given that is not strictly positive.
+        """
+        if (strain_rate is not None) and (strain_rate <= 0):
+            raise Exception("Counter-flow strain rate must be strictly positive.")
+        self.__counterflow_strain_rate = strain_rate
+        return
+
+    def GetCounterFlowStrainRate(self) -> float:
+        """
+        Return the fixed global strain rate for counter-flow flames.
+
+        :return: global strain rate [1/s], or None when the strain rate is swept.
+        :rtype: float
+        """
+        return self.__counterflow_strain_rate
+
+    def GetCounterFlowFixedStrain(self) -> bool:
+        """
+        Whether counter-flow flames are held at a fixed global strain rate, which is
+        the case exactly when a strain rate has been set.
+
+        :return: the strain rate is held fixed.
+        :rtype: bool
+        """
+        return self.__counterflow_strain_rate is not None
+
     def GenerateExtraInterpolatedBurnerFlames(self):
         """
         Whether the manifold data contains extra interpolated burner-stabilized flame data.
@@ -1655,6 +1745,51 @@ class Config_FGM(Config):
         :rtype: bool
         """
         return self.__write_MATLAB_files
+
+    def SetSaveMoleFractions(self, save_mole_fractions:bool=True):
+        """
+        Enable or disable saving mole fractions (X-species) in flamelet CSV files.
+
+        :param save_mole_fractions: whether to save mole fractions alongside mass fractions.
+        :type save_mole_fractions: bool
+        """
+        self.__save_mole_fractions = save_mole_fractions
+        return
+
+    def GetSaveMoleFractions(self) -> bool:
+        """
+        Check whether mole fractions (X-species) should be saved in flamelet CSV files.
+
+        :return: True if mole fractions should be saved.
+        :rtype: bool
+        """
+        return self.__save_mole_fractions
+
+    def SetRestartFromExisting(self, restart_from_existing:bool=True):
+        """
+        Enable or disable restarting flamelet generation from already-computed
+        solutions. When enabled, a flamelet solver skips re-solving any point in
+        its sweep whose output CSV already exists on disk (from a previous run),
+        loading it instead as the basis for that point and for warm-starting the
+        next point in the sweep. Useful for resuming an interrupted generation
+        run, or for iterating on downstream settings without recomputing an
+        already-converged sweep.
+
+        :param restart_from_existing: whether to skip re-solving existing points.
+        :type restart_from_existing: bool
+        """
+        self.__restart_from_existing_flamelets = restart_from_existing
+        return
+
+    def GetRestartFromExisting(self) -> bool:
+        """
+        Check whether flamelet generation should skip re-solving points whose
+        output CSV already exists on disk.
+
+        :return: True if existing flamelet solutions should be restarted from.
+        :rtype: bool
+        """
+        return self.__restart_from_existing_flamelets
 
     def SetProgressVariableDefinition(self, pv_species:list[str]=DefaultSettings_FGM.pv_species, pv_weights:list[float]=DefaultSettings_FGM.pv_weights):
         """
