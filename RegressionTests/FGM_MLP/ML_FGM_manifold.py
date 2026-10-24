@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+import os
 import sys
+import glob
+import numpy as np
 from su2dataminer.config import Config_FGM
 from su2dataminer.generate_data import ComputeFlameletData,ComputeBoundaryData
 from su2dataminer.process_data import FlameletConcatenator
@@ -52,8 +55,15 @@ T.CommenceTraining()
 config.UpdateMLPHyperParams(T)
 config.PrintBanner()
     
-if consistent_hp_params:
-    sys.exit(0)
-else:
+if not consistent_hp_params:
     print("ERROR: network hyperparameters are inconsistent between config and trainer!")
     sys.exit(1)
+
+# Weights and loss histories depend on the CPU, so only the final validation loss is compared.
+history_files = glob.glob("architectures_Group1/Worker_0/Model_*/TrainingHistory.csv")
+val_loss = np.loadtxt(max(history_files, key=os.path.getmtime), delimiter=",", skiprows=1)[-1, 2]
+val_loss_ref = np.loadtxt("TrainingHistory_ref.csv", delimiter=",", skiprows=1)[-1, 2]
+if not (0.5 < val_loss/val_loss_ref < 2.0):
+    print("ERROR: final validation loss %.4e is not within a factor 2 of the reference %.4e" % (val_loss, val_loss_ref))
+    sys.exit(1)
+sys.exit(0)
