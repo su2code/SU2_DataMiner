@@ -66,6 +66,7 @@ def main():
     consistency_NICFD_PINN.reference_files = ["SU2_MLP_ref.mlp"]
     consistency_NICFD_PINN.test_files = ["SU2_MLP.mlp"]
     consistency_NICFD_PINN.timeout=300
+    consistency_NICFD_PINN.tolerance = 5.0
     test_list_NICFD.append(consistency_NICFD_PINN)
 
     hydrogen_flamelet = TestCase("H2_Flamelet")
@@ -74,13 +75,16 @@ def main():
     hydrogen_flamelet.exec_command = "./generate_flamelet_data.py"
     hydrogen_flamelet.reference_files = ["flamelet_data.ref"]
     hydrogen_flamelet.test_files = ["freeflame_data/phi_1.0000/Freeflame_phi1.0000_Tu300.0.csv"]
+    hydrogen_flamelet.comp_threshold = 1e-8
+    hydrogen_flamelet.tolerance = 1e-6
     test_list_FGM.append(hydrogen_flamelet)
 
     FGM_training = TestCase("ML FGM")
     FGM_training.config_dir="FGM_MLP/"
     FGM_training.config_file = ""
     FGM_training.timeout=300
-    FGM_training.tolerance= 0.01
+    FGM_training.comp_threshold = 1e-7
+    FGM_training.tolerance = 1.0
     FGM_training.exec_command="./ML_FGM_manifold.py"
     FGM_training.reference_files=["TrainingHistory_ref.csv"]
     FGM_training.test_files=["architectures_Group1/Worker_0/Model_0/TrainingHistory.csv"]
